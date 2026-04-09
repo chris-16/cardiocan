@@ -10,6 +10,7 @@ import PhotoUpload from "@/app/perros/components/photo-upload";
 import RpmAlert, { getRpmAlertLevel, DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 import MeasurementNotes from "@/app/perros/components/measurement-notes";
 import DogShares from "@/app/perros/components/dog-shares";
+import ExportPdfButton from "@/app/perros/components/export-pdf-button";
 
 function formatWeight(weightGrams: number | null): string {
   if (!weightGrams) return "—";
@@ -277,6 +278,9 @@ export default function DogDetailPage({
           </div>
           <span className="text-gray-400">&rarr;</span>
         </Link>
+
+        {/* Export PDF */}
+        <ExportPdfButton dogId={dog.id} dogName={dog.name} />
 
         {/* Measurement history */}
         {measurements.length > 0 && (
