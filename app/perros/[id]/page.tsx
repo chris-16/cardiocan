@@ -149,6 +149,7 @@ export default function DogDetailPage({
           dogId={dog.id}
           currentPhotoUrl={dog.photoUrl}
           onPhotoUpdated={(url) => setDog({ ...dog, photoUrl: url })}
+          readOnly={role !== "owner"}
         />
 
         {/* Dog info */}
@@ -321,7 +322,10 @@ export default function DogDetailPage({
         {/* Caretaker badge */}
         {role === "caretaker" && (
           <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
-            Tienes acceso como cuidador a este perro.
+            <p className="font-medium">Acceso como cuidador</p>
+            <p className="mt-1 text-xs opacity-80">
+              Puedes realizar mediciones y consultar el historial. Para editar el perfil o gestionar cuidadores, contacta al propietario.
+            </p>
           </div>
         )}
 

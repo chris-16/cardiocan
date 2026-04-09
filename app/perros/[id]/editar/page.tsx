@@ -26,6 +26,13 @@ export default function EditDogPage({
           setError(data.error || "Error al cargar el perfil");
           return;
         }
+
+        // Only owners can edit — redirect caretakers back to profile
+        if (data.role && data.role !== "owner") {
+          router.push(`/perros/${id}`);
+          return;
+        }
+
         setDog(data.dog);
       } catch {
         setError("Error de conexión");
@@ -34,7 +41,7 @@ export default function EditDogPage({
       }
     }
     fetchDog();
-  }, [id]);
+  }, [id, router]);
 
   async function handleSubmit(data: DogFormData) {
     const res = await fetch(`/api/dogs/${id}`, {

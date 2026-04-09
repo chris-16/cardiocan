@@ -30,7 +30,7 @@ function DogCard({ dog, shared }: { dog: Dog; shared?: boolean }) {
           <p className="font-medium truncate">{dog.name}</p>
           {shared && (
             <span className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-              Compartido
+              Cuidador
             </span>
           )}
         </div>

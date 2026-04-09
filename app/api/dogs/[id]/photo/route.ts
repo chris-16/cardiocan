@@ -3,7 +3,8 @@ import { getDb } from "@/lib/db";
 import { dogs } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { getDogAccess } from "@/lib/db/dog-access";
-import { eq, and } from "drizzle-orm";
+import { hasPermission } from "@/lib/db/permissions";
+import { eq } from "drizzle-orm";
 import path from "path";
 import { writeFile, mkdir } from "fs/promises";
 import crypto from "crypto";
@@ -22,13 +23,20 @@ export async function POST(
 
     const { id } = await params;
 
-    // Verify access (owner or caretaker)
+    // Verify access and role
     const access = await getDogAccess(id, session.userId);
 
     if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
+      );
+    }
+
+    if (!hasPermission(access.role, "dog:photo")) {
+      return NextResponse.json(
+        { error: "No tienes permiso para modificar la foto" },
+        { status: 403 }
       );
     }
 

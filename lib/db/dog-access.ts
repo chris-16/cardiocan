@@ -45,7 +45,9 @@ export async function getDogAccess(
       .limit(1);
 
     if (sharedDog) {
-      return { dog: sharedDog, role: "caretaker" };
+      // Use the actual role stored in dogShares (defaults to "caretaker")
+      const role = (share.role as DogAccessRole) || "caretaker";
+      return { dog: sharedDog, role };
     }
   }
 

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { dogs, dogShares, shareInvitations } from "@/lib/db/schema";
+import { dogShares, shareInvitations } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { getDogAccess } from "@/lib/db/dog-access";
+import { hasPermission } from "@/lib/db/permissions";
 import { eq, and } from "drizzle-orm";
 
 // DELETE: Revoke a share or cancel an invitation (owner only)
@@ -16,21 +18,25 @@ export async function DELETE(
     }
 
     const { id: dogId, shareId } = await params;
-    const db = getDb();
 
-    // Verify ownership
-    const [dog] = await db
-      .select()
-      .from(dogs)
-      .where(and(eq(dogs.id, dogId), eq(dogs.userId, session.userId)))
-      .limit(1);
+    // Verify access and role
+    const access = await getDogAccess(dogId, session.userId);
 
-    if (!dog) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
+
+    if (!hasPermission(access.role, "shares:manage")) {
+      return NextResponse.json(
+        { error: "No tienes permiso para gestionar cuidadores" },
+        { status: 403 }
+      );
+    }
+
+    const db = getDb();
 
     // Try to delete from dog_shares first
     const [existingShare] = await db

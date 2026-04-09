@@ -7,12 +7,14 @@ interface PhotoUploadProps {
   dogId: string;
   currentPhotoUrl: string | null;
   onPhotoUpdated: (photoUrl: string) => void;
+  readOnly?: boolean;
 }
 
 export default function PhotoUpload({
   dogId,
   currentPhotoUrl,
   onPhotoUpdated,
+  readOnly = false,
 }: PhotoUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -88,17 +90,19 @@ export default function PhotoUpload({
         )}
       </div>
 
-      <label className="cursor-pointer rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
-        {uploading ? "Subiendo..." : "Cambiar foto"}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={handleFileChange}
-          disabled={uploading}
-          className="hidden"
-        />
-      </label>
+      {!readOnly && (
+        <label className="cursor-pointer rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+          {uploading ? "Subiendo..." : "Cambiar foto"}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleFileChange}
+            disabled={uploading}
+            className="hidden"
+          />
+        </label>
+      )}
 
       {error && (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { dogs, dogShares, shareInvitations, users } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { getDogAccess } from "@/lib/db/dog-access";
+import { hasPermission } from "@/lib/db/permissions";
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -23,21 +25,25 @@ export async function GET(
     }
 
     const { id: dogId } = await params;
-    const db = getDb();
 
-    // Verify ownership
-    const [dog] = await db
-      .select()
-      .from(dogs)
-      .where(and(eq(dogs.id, dogId), eq(dogs.userId, session.userId)))
-      .limit(1);
+    // Verify access and role
+    const access = await getDogAccess(dogId, session.userId);
 
-    if (!dog) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
+
+    if (!hasPermission(access.role, "shares:manage")) {
+      return NextResponse.json(
+        { error: "No tienes permiso para gestionar cuidadores" },
+        { status: 403 }
+      );
+    }
+
+    const db = getDb();
 
     // Get active shares with user info
     const shares = await db
@@ -85,22 +91,25 @@ export async function POST(
     }
 
     const { id: dogId } = await params;
-    const db = getDb();
 
-    // Verify ownership
-    const [dog] = await db
-      .select()
-      .from(dogs)
-      .where(and(eq(dogs.id, dogId), eq(dogs.userId, session.userId)))
-      .limit(1);
+    // Verify access and role
+    const access = await getDogAccess(dogId, session.userId);
 
-    if (!dog) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
 
+    if (!hasPermission(access.role, "shares:manage")) {
+      return NextResponse.json(
+        { error: "No tienes permiso para gestionar cuidadores" },
+        { status: 403 }
+      );
+    }
+
+    const db = getDb();
     const body = (await request.json()) as CreateShareBody;
     const email = body.email?.trim().toLowerCase() || null;
 

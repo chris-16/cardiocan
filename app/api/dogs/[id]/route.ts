@@ -3,7 +3,8 @@ import { getDb } from "@/lib/db";
 import { dogs } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { getDogAccess } from "@/lib/db/dog-access";
-import { eq, and } from "drizzle-orm";
+import { hasPermission } from "@/lib/db/permissions";
+import { eq } from "drizzle-orm";
 
 interface UpdateDogBody {
   name?: string;
@@ -56,21 +57,24 @@ export async function PUT(
     const { id } = await params;
     const body = (await request.json()) as UpdateDogBody;
 
-    const db = getDb();
+    // Verify access and role
+    const access = await getDogAccess(id, session.userId);
 
-    // Verify ownership
-    const [existing] = await db
-      .select({ id: dogs.id })
-      .from(dogs)
-      .where(and(eq(dogs.id, id), eq(dogs.userId, session.userId)))
-      .limit(1);
-
-    if (!existing) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
+
+    if (!hasPermission(access.role, "dog:edit")) {
+      return NextResponse.json(
+        { error: "No tienes permiso para editar este perfil" },
+        { status: 403 }
+      );
+    }
+
+    const db = getDb();
 
     const updates: Record<string, unknown> = {
       updatedAt: new Date(),
@@ -104,7 +108,7 @@ export async function PUT(
     await db
       .update(dogs)
       .set(updates)
-      .where(and(eq(dogs.id, id), eq(dogs.userId, session.userId)));
+      .where(eq(dogs.id, id));
 
     const [dog] = await db.select().from(dogs).where(eq(dogs.id, id)).limit(1);
 
@@ -128,24 +132,26 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const db = getDb();
 
-    const [existing] = await db
-      .select({ id: dogs.id })
-      .from(dogs)
-      .where(and(eq(dogs.id, id), eq(dogs.userId, session.userId)))
-      .limit(1);
+    // Verify access and role
+    const access = await getDogAccess(id, session.userId);
 
-    if (!existing) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
 
-    await db
-      .delete(dogs)
-      .where(and(eq(dogs.id, id), eq(dogs.userId, session.userId)));
+    if (!hasPermission(access.role, "dog:delete")) {
+      return NextResponse.json(
+        { error: "No tienes permiso para eliminar este perfil" },
+        { status: 403 }
+      );
+    }
+
+    const db = getDb();
+    await db.delete(dogs).where(eq(dogs.id, id));
 
     return NextResponse.json({ success: true });
   } catch {
