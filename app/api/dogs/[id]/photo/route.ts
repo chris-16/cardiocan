@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { dogs } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { getDogAccess } from "@/lib/db/dog-access";
 import { eq, and } from "drizzle-orm";
 import path from "path";
 import { writeFile, mkdir } from "fs/promises";
@@ -20,21 +21,18 @@ export async function POST(
     }
 
     const { id } = await params;
-    const db = getDb();
 
-    // Verify ownership
-    const [existing] = await db
-      .select({ id: dogs.id })
-      .from(dogs)
-      .where(and(eq(dogs.id, id), eq(dogs.userId, session.userId)))
-      .limit(1);
+    // Verify access (owner or caretaker)
+    const access = await getDogAccess(id, session.userId);
 
-    if (!existing) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
+
+    const db = getDb();
 
     const formData = await request.formData();
     const file = formData.get("photo") as File | null;

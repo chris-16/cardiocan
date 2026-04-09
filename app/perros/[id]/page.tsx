@@ -7,6 +7,7 @@ import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
 import PhotoUpload from "@/app/perros/components/photo-upload";
 import RpmAlert, { getRpmAlertLevel, DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 import MeasurementNotes from "@/app/perros/components/measurement-notes";
+import DogShares from "@/app/perros/components/dog-shares";
 
 function formatWeight(weightGrams: number | null): string {
   if (!weightGrams) return "—";
@@ -36,6 +37,7 @@ export default function DogDetailPage({
   const router = useRouter();
   const [dog, setDog] = useState<Dog | null>(null);
   const [measurements, setMeasurements] = useState<RespiratoryMeasurement[]>([]);
+  const [role, setRole] = useState<"owner" | "caretaker">("owner");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -54,6 +56,7 @@ export default function DogDetailPage({
           return;
         }
         setDog(dogData.dog);
+        if (dogData.role) setRole(dogData.role);
 
         if (measRes.ok) {
           const measData = await measRes.json();
@@ -289,21 +292,35 @@ export default function DogDetailPage({
           </div>
         )}
 
+        {/* Sharing section (owner only) */}
+        {role === "owner" && <DogShares dogId={dog.id} />}
+
+        {/* Caretaker badge */}
+        {role === "caretaker" && (
+          <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+            Tienes acceso como cuidador a este perro.
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex gap-3">
-          <Link
-            href={`/perros/${dog.id}/editar`}
-            className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Editar perfil
-          </Link>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20 disabled:opacity-50"
-          >
-            {deleting ? "Eliminando..." : "Eliminar"}
-          </button>
+          {role === "owner" && (
+            <>
+              <Link
+                href={`/perros/${dog.id}/editar`}
+                className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Editar perfil
+              </Link>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20 disabled:opacity-50"
+              >
+                {deleting ? "Eliminando..." : "Eliminar"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

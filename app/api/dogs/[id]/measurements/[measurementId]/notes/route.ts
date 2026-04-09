@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { dogs, respiratoryMeasurements } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { getDogAccess } from "@/lib/db/dog-access";
 import { eq, and } from "drizzle-orm";
 
 interface UpdateNotesBody {
@@ -20,19 +21,16 @@ export async function PUT(
 
     const { id: dogId, measurementId } = await params;
 
-    const db = getDb();
-    const [dog] = await db
-      .select()
-      .from(dogs)
-      .where(and(eq(dogs.id, dogId), eq(dogs.userId, session.userId)))
-      .limit(1);
+    const access = await getDogAccess(dogId, session.userId);
 
-    if (!dog) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
+
+    const db = getDb();
 
     const [measurement] = await db
       .select()
@@ -87,19 +85,16 @@ export async function DELETE(
 
     const { id: dogId, measurementId } = await params;
 
-    const db = getDb();
-    const [dog] = await db
-      .select()
-      .from(dogs)
-      .where(and(eq(dogs.id, dogId), eq(dogs.userId, session.userId)))
-      .limit(1);
+    const access = await getDogAccess(dogId, session.userId);
 
-    if (!dog) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
+
+    const db = getDb();
 
     const [measurement] = await db
       .select()

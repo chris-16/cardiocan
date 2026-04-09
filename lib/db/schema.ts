@@ -65,7 +65,42 @@ export const respiratoryMeasurements = sqliteTable("respiratory_measurements", {
     .$defaultFn(() => new Date()),
 });
 
+export const dogShares = sqliteTable("dog_shares", {
+  id: text("id").primaryKey(), // UUID
+  dogId: text("dog_id")
+    .notNull()
+    .references(() => dogs.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("caretaker"), // 'caretaker'
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const shareInvitations = sqliteTable("share_invitations", {
+  id: text("id").primaryKey(), // UUID
+  dogId: text("dog_id")
+    .notNull()
+    .references(() => dogs.id, { onDelete: "cascade" }),
+  invitedBy: text("invited_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  email: text("email"), // nullable — null when link-only invitation
+  token: text("token").notNull().unique(), // unique invite token
+  status: text("status").notNull().default("pending"), // 'pending' | 'accepted' | 'revoked'
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export type Dog = typeof dogs.$inferSelect;
 export type NewDog = typeof dogs.$inferInsert;
 export type RespiratoryMeasurement = typeof respiratoryMeasurements.$inferSelect;
 export type NewRespiratoryMeasurement = typeof respiratoryMeasurements.$inferInsert;
+export type DogShare = typeof dogShares.$inferSelect;
+export type NewDogShare = typeof dogShares.$inferInsert;
+export type ShareInvitation = typeof shareInvitations.$inferSelect;
+export type NewShareInvitation = typeof shareInvitations.$inferInsert;

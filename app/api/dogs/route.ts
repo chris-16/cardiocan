@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { dogs } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
+import { getAllAccessibleDogs } from "@/lib/db/dog-access";
 import crypto from "crypto";
 
 interface CreateDogBody {
@@ -20,13 +21,9 @@ export async function GET() {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const db = getDb();
-    const userDogs = await db
-      .select()
-      .from(dogs)
-      .where(eq(dogs.userId, session.userId));
+    const { owned, shared } = await getAllAccessibleDogs(session.userId);
 
-    return NextResponse.json({ dogs: userDogs });
+    return NextResponse.json({ dogs: owned, sharedDogs: shared });
   } catch {
     return NextResponse.json(
       { error: "Error interno del servidor" },

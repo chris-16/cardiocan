@@ -5,8 +5,65 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Dog } from "@/lib/db/schema";
 
+function DogCard({ dog, shared }: { dog: Dog; shared?: boolean }) {
+  return (
+    <Link
+      href={`/perros/${dog.id}`}
+      className="flex items-center gap-4 rounded-lg border border-gray-200 p-4 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50 transition-colors"
+    >
+      <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+        {dog.photoUrl ? (
+          <Image
+            src={dog.photoUrl}
+            alt={dog.name}
+            fill
+            className="object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-gray-400 text-xl font-bold">
+            {dog.name[0].toUpperCase()}
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="font-medium truncate">{dog.name}</p>
+          {shared && (
+            <span className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+              Compartido
+            </span>
+          )}
+        </div>
+        {dog.breed && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+            {dog.breed}
+          </p>
+        )}
+        {dog.cardiacCondition && (
+          <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
+            {dog.cardiacCondition}
+          </p>
+        )}
+      </div>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        className="h-5 w-5 text-gray-400"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+      >
+        <path
+          fillRule="evenodd"
+          d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+          clipRule="evenodd"
+        />
+      </svg>
+    </Link>
+  );
+}
+
 export default function DogListPage() {
   const [dogs, setDogs] = useState<Dog[]>([]);
+  const [sharedDogs, setSharedDogs] = useState<Dog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -20,6 +77,7 @@ export default function DogListPage() {
           return;
         }
         setDogs(data.dogs);
+        setSharedDogs(data.sharedDogs || []);
       } catch {
         setError("Error de conexión");
       } finally {
@@ -55,7 +113,7 @@ export default function DogListPage() {
         </div>
       )}
 
-      {dogs.length === 0 ? (
+      {dogs.length === 0 && sharedDogs.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-gray-500 dark:text-gray-400 mb-4">
             Aún no has agregado ningún perro
@@ -68,55 +126,28 @@ export default function DogListPage() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
-          {dogs.map((dog) => (
-            <Link
-              key={dog.id}
-              href={`/perros/${dog.id}`}
-              className="flex items-center gap-4 rounded-lg border border-gray-200 p-4 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/50 transition-colors"
-            >
-              <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                {dog.photoUrl ? (
-                  <Image
-                    src={dog.photoUrl}
-                    alt={dog.name}
-                    fill
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-gray-400 text-xl font-bold">
-                    {dog.name[0].toUpperCase()}
-                  </div>
-                )}
+        <>
+          {dogs.length > 0 && (
+            <div className="space-y-3">
+              {dogs.map((dog) => (
+                <DogCard key={dog.id} dog={dog} />
+              ))}
+            </div>
+          )}
+
+          {sharedDogs.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-lg font-semibold mb-3 text-gray-600 dark:text-gray-400">
+                Compartidos conmigo
+              </h2>
+              <div className="space-y-3">
+                {sharedDogs.map((dog) => (
+                  <DogCard key={dog.id} dog={dog} shared />
+                ))}
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-medium truncate">{dog.name}</p>
-                {dog.breed && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                    {dog.breed}
-                  </p>
-                )}
-                {dog.cardiacCondition && (
-                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
-                    {dog.cardiacCondition}
-                  </p>
-                )}
-              </div>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 text-gray-400"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </Link>
-          ))}
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

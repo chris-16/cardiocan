@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { dogs, respiratoryMeasurements } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { getDogAccess } from "@/lib/db/dog-access";
 import { eq, and, desc } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -23,21 +24,17 @@ export async function GET(
 
     const { id: dogId } = await params;
 
-    // Verify dog ownership
-    const db = getDb();
-    const [dog] = await db
-      .select()
-      .from(dogs)
-      .where(and(eq(dogs.id, dogId), eq(dogs.userId, session.userId)))
-      .limit(1);
+    // Verify dog access (owner or caretaker)
+    const access = await getDogAccess(dogId, session.userId);
 
-    if (!dog) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
 
+    const db = getDb();
     const measurements = await db
       .select()
       .from(respiratoryMeasurements)
@@ -65,20 +62,17 @@ export async function POST(
 
     const { id: dogId } = await params;
 
-    // Verify dog ownership
-    const db = getDb();
-    const [dog] = await db
-      .select()
-      .from(dogs)
-      .where(and(eq(dogs.id, dogId), eq(dogs.userId, session.userId)))
-      .limit(1);
+    // Verify dog access (owner or caretaker)
+    const access = await getDogAccess(dogId, session.userId);
 
-    if (!dog) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
+
+    const db = getDb();
 
     const body = (await request.json()) as CreateMeasurementBody;
     const { breathCount, durationSeconds, notes } = body;

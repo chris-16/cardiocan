@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { dogs } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { getDogAccess } from "@/lib/db/dog-access";
 import { eq, and } from "drizzle-orm";
 
 interface UpdateDogBody {
@@ -24,21 +25,16 @@ export async function GET(
     }
 
     const { id } = await params;
-    const db = getDb();
-    const [dog] = await db
-      .select()
-      .from(dogs)
-      .where(and(eq(dogs.id, id), eq(dogs.userId, session.userId)))
-      .limit(1);
+    const access = await getDogAccess(id, session.userId);
 
-    if (!dog) {
+    if (!access) {
       return NextResponse.json(
         { error: "Perro no encontrado" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ dog });
+    return NextResponse.json({ dog: access.dog, role: access.role });
   } catch {
     return NextResponse.json(
       { error: "Error interno del servidor" },
