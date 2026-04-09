@@ -3,9 +3,19 @@
 import { useState, useRef, use } from "react";
 import Link from "next/link";
 import VideoRecorder from "@/app/perros/components/video-recorder";
+import AnalysisMethodSelector from "@/app/perros/components/analysis-method-selector";
+import ROISelector from "@/app/perros/components/roi-selector";
+import OnDeviceProgress from "@/app/perros/components/on-device-progress";
+import type { AnalysisMethod } from "@/app/perros/components/analysis-method-selector";
 import type { ValidationResult, ManualComparison } from "@/lib/analysis-validation";
+import type { ROI, AnalysisProgress, OnDeviceAnalysisResult } from "@/lib/on-device-analyzer";
 
-type PageState = "instructions" | "recording" | "preview";
+type PageState =
+  | "instructions"
+  | "recording"
+  | "preview"
+  | "roi-selection"
+  | "on-device-analyzing";
 
 interface AnalysisResult {
   breathCount: number;
@@ -35,6 +45,10 @@ export default function VideoPage({
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [analysisMethod, setAnalysisMethod] = useState<AnalysisMethod>("cloud");
+  const [onDeviceProgress, setOnDeviceProgress] =
+    useState<AnalysisProgress | null>(null);
+  const [usedMethod, setUsedMethod] = useState<AnalysisMethod | null>(null);
 
   const videoBlobRef = useRef<Blob | null>(null);
 
@@ -51,10 +65,12 @@ export default function VideoPage({
     setPageState("recording");
   }
 
-  async function handleAnalyze() {
+  // --- Cloud analysis (Gemini) ---
+  async function handleCloudAnalyze() {
     if (!videoBlob) return;
     setAnalyzing(true);
     setAnalysisError(null);
+    setUsedMethod("cloud");
 
     try {
       const formData = new FormData();
@@ -74,10 +90,71 @@ export default function VideoPage({
       setResult(data);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Error inesperado al analizar el video";
+        err instanceof Error
+          ? err.message
+          : "Error inesperado al analizar el video";
       setAnalysisError(message);
     } finally {
       setAnalyzing(false);
+    }
+  }
+
+  // --- On-device analysis ---
+  function handleStartOnDeviceAnalysis() {
+    if (!videoBlob) return;
+    setAnalysisError(null);
+    setPageState("roi-selection");
+  }
+
+  async function handleROISelected(roi: ROI) {
+    if (!videoBlob) return;
+    setPageState("on-device-analyzing");
+    setAnalysisError(null);
+    setUsedMethod("on-device");
+
+    try {
+      // Dynamic import to keep the analyzer out of the main bundle
+      const { analyzeVideoOnDevice } = await import(
+        "@/lib/on-device-analyzer"
+      );
+
+      const analysisResult: OnDeviceAnalysisResult =
+        await analyzeVideoOnDevice(videoBlob, roi, (progress) => {
+          setOnDeviceProgress(progress);
+        });
+
+      // Save the result to the server
+      const res = await fetch(`/api/dogs/${dogId}/on-device-measurement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(analysisResult),
+      });
+
+      const data = (await res.json()) as AnalysisResponse & { error?: string };
+
+      if (!res.ok) {
+        throw new Error(data.error || "Error al guardar la medición");
+      }
+
+      setResult(data);
+      setPageState("preview"); // Reset page state
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Error inesperado en el análisis on-device";
+      setAnalysisError(message);
+      setPageState("preview");
+    } finally {
+      setOnDeviceProgress(null);
+    }
+  }
+
+  function handleAnalyze() {
+    if (analysisMethod === "cloud") {
+      handleCloudAnalyze();
+    } else {
+      handleStartOnDeviceAnalysis();
     }
   }
 
@@ -85,6 +162,8 @@ export default function VideoPage({
     setResult(null);
     setVideoBlob(null);
     setAnalysisError(null);
+    setOnDeviceProgress(null);
+    setUsedMethod(null);
     setPageState("instructions");
   }
 
@@ -101,6 +180,22 @@ export default function VideoPage({
         <div className="space-y-6">
           {success ? (
             <>
+              {/* Method badge */}
+              <div className="flex justify-center">
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                    usedMethod === "on-device"
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                  }`}
+                >
+                  {usedMethod === "on-device" ? "📱" : "☁️"}
+                  {usedMethod === "on-device"
+                    ? "Análisis en dispositivo"
+                    : "Análisis cloud (Gemini)"}
+                </span>
+              </div>
+
               {/* RPM result */}
               <div className="text-center">
                 <div
@@ -180,9 +275,21 @@ export default function VideoPage({
                     Confianza del análisis
                   </span>
                   <ConfidenceBadge
-                    confidence={validation?.overallConfidence ?? analysis.confidence}
+                    confidence={
+                      validation?.overallConfidence ?? analysis.confidence
+                    }
                     aiConfidence={analysis.confidence}
                   />
+                </div>
+                <div className="flex justify-between px-4 py-3">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    Método
+                  </span>
+                  <span className="text-sm font-medium">
+                    {usedMethod === "on-device"
+                      ? "En dispositivo"
+                      : "Cloud (Gemini)"}
+                  </span>
                 </div>
                 {analysis.notes && (
                   <div className="px-4 py-3">
@@ -196,7 +303,9 @@ export default function VideoPage({
 
               {/* Validation: Manual comparison */}
               {validation?.manualComparison && (
-                <ManualComparisonCard comparison={validation.manualComparison} />
+                <ManualComparisonCard
+                  comparison={validation.manualComparison}
+                />
               )}
 
               {/* Validation: Historical accuracy */}
@@ -223,7 +332,7 @@ export default function VideoPage({
                 </div>
               )}
 
-              {/* Low confidence fallback (only if no validation warnings already cover it) */}
+              {/* Low confidence fallback */}
               {analysis.confidence === "baja" &&
                 (!validation || validation.warnings.length === 0) && (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
@@ -234,6 +343,18 @@ export default function VideoPage({
                     </p>
                   </div>
                 )}
+
+              {/* On-device specific note */}
+              {usedMethod === "on-device" && (
+                <div className="rounded-lg border border-green-200 dark:border-green-800 p-4">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                    <strong>Análisis on-device:</strong> El video fue analizado
+                    localmente en tu dispositivo usando detección de movimiento
+                    por procesamiento de imagen. No se envió ningún dato a
+                    servidores externos.
+                  </p>
+                </div>
+              )}
 
               {/* Scientific benchmark reference */}
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
@@ -272,6 +393,11 @@ export default function VideoPage({
                   <li>Graba con buena iluminación</li>
                   <li>Mantén la cámara estable</li>
                   <li>El perro debe estar en reposo</li>
+                  {usedMethod === "on-device" && (
+                    <li>
+                      Intenta seleccionar con más precisión la zona del tórax
+                    </li>
+                  )}
                 </ul>
               </div>
             </>
@@ -413,6 +539,13 @@ export default function VideoPage({
                 </div>
               </div>
 
+              {/* Analysis method selector */}
+              <AnalysisMethodSelector
+                selected={analysisMethod}
+                onChange={setAnalysisMethod}
+                disabled={analyzing}
+              />
+
               {/* Analysis error */}
               {analysisError && (
                 <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4">
@@ -425,19 +558,25 @@ export default function VideoPage({
               <button
                 onClick={handleAnalyze}
                 disabled={analyzing}
-                className="w-full rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`w-full rounded-md px-4 py-3 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  analysisMethod === "on-device"
+                    ? "bg-green-600 hover:bg-green-700"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }`}
               >
                 {analyzing ? (
                   <span className="flex items-center justify-center gap-2">
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                     Analizando respiración...
                   </span>
+                ) : analysisMethod === "on-device" ? (
+                  "📱 Analizar en dispositivo"
                 ) : (
-                  "Analizar respiración con IA"
+                  "☁️ Analizar con Gemini"
                 )}
               </button>
 
-              {analyzing && (
+              {analyzing && analysisMethod === "cloud" && (
                 <p className="text-xs text-center text-gray-500 dark:text-gray-400">
                   El análisis puede tomar entre 15 y 60 segundos dependiendo de
                   la duración del video.
@@ -463,6 +602,22 @@ export default function VideoPage({
             </button>
           )}
         </div>
+      )}
+
+      {/* ROI Selection screen (on-device only) */}
+      {pageState === "roi-selection" && videoBlob && (
+        <div className="space-y-6">
+          <ROISelector
+            videoBlob={videoBlob}
+            onROISelected={handleROISelected}
+            onCancel={() => setPageState("preview")}
+          />
+        </div>
+      )}
+
+      {/* On-device analysis progress */}
+      {pageState === "on-device-analyzing" && onDeviceProgress && (
+        <OnDeviceProgress progress={onDeviceProgress} />
       )}
     </div>
   );
