@@ -20,6 +20,7 @@ function setupTestDb() {
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       name TEXT NOT NULL,
+      timezone TEXT NOT NULL DEFAULT 'America/Santiago',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );

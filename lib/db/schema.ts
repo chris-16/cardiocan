@@ -8,6 +8,7 @@ export const users = sqliteTable("users", {
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
+  timezone: text("timezone").notNull().default("America/Santiago"),
   updatedAt: integer("updated_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

@@ -6,14 +6,19 @@ import {
   pushSubscriptions,
   dogs,
   dogShares,
+  users,
 } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { sendPushNotification } from "@/lib/push";
+import { getLocalTime, getLocalDayOfWeek } from "@/lib/timezone";
 
 /**
  * Cron endpoint to check and send medication reminders.
  * Should be called every minute (or every 5 minutes) by an external cron service.
  * Protected by CRON_SECRET header.
+ *
+ * Timezone handling: medication schedules are stored in the user's local time (HH:MM).
+ * This route converts the current UTC time to each dog owner's timezone before matching.
  */
 export async function GET(request: NextRequest) {
   // Verify cron secret
@@ -27,10 +32,8 @@ export async function GET(request: NextRequest) {
   try {
     const db = getDb();
     const now = new Date();
-    const currentDay = now.getDay(); // 0=Sun..6=Sat
-    const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
-    // Find all active medication schedules matching current time and day
+    // Fetch all active medication schedules with owner timezone
     const allSchedules = await db
       .select({
         scheduleId: medicationSchedules.id,
@@ -42,6 +45,7 @@ export async function GET(request: NextRequest) {
         dogId: dogs.id,
         dogName: dogs.name,
         ownerId: dogs.userId,
+        ownerTimezone: users.timezone,
       })
       .from(medicationSchedules)
       .innerJoin(
@@ -49,17 +53,15 @@ export async function GET(request: NextRequest) {
         eq(medicationSchedules.medicationId, medications.id)
       )
       .innerJoin(dogs, eq(medications.dogId, dogs.id))
-      .where(
-        and(
-          eq(medicationSchedules.time, currentTime),
-          eq(medications.active, true)
-        )
-      );
+      .innerJoin(users, eq(dogs.userId, users.id))
+      .where(eq(medications.active, true));
 
-    // Filter by day of week
+    // Filter schedules by comparing schedule time against the owner's local time
     const dueSchedules = allSchedules.filter((s) => {
+      const localTime = getLocalTime(now, s.ownerTimezone);
+      const localDay = getLocalDayOfWeek(now, s.ownerTimezone);
       const days = s.daysOfWeek.split(",").map(Number);
-      return days.includes(currentDay);
+      return s.scheduleTime === localTime && days.includes(localDay);
     });
 
     if (dueSchedules.length === 0) {
@@ -102,11 +104,11 @@ export async function GET(request: NextRequest) {
               body: `${schedule.medicationName} — ${schedule.medicationDose}`,
               icon: "/icon-192.png",
               badge: "/icon-192.png",
-              tag: `med-${schedule.medicationId}-${currentTime}`,
+              tag: `med-${schedule.medicationId}-${schedule.scheduleTime}`,
               data: {
                 dogId: schedule.dogId,
                 medicationId: schedule.medicationId,
-                scheduledTime: currentTime,
+                scheduledTime: schedule.scheduleTime,
                 action: "medication-reminder",
               },
               actions: [

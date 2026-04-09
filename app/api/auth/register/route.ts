@@ -4,18 +4,20 @@ import { users } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
+import { isValidTimezone } from "@/lib/timezone";
 import crypto from "crypto";
 
 interface RegisterBody {
   email: string;
   password: string;
   name: string;
+  timezone?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as RegisterBody;
-    const { email, password, name } = body;
+    const { email, password, name, timezone } = body;
 
     if (!email || !password || !name) {
       return NextResponse.json(
@@ -49,11 +51,15 @@ export async function POST(request: NextRequest) {
     const passwordHash = await hashPassword(password);
     const userId = crypto.randomUUID();
 
+    const userTimezone =
+      timezone && isValidTimezone(timezone) ? timezone : "America/Santiago";
+
     await db.insert(users).values({
       id: userId,
       email: email.toLowerCase(),
       passwordHash,
       name,
+      timezone: userTimezone,
     });
 
     await createSession(userId);
