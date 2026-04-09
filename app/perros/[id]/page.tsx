@@ -189,6 +189,22 @@ export default function DogDetailPage({
           <RpmAlert rpm={measurements[0].breathsPerMinute} />
         )}
 
+        {/* Chart link */}
+        {measurements.length > 0 && (
+          <Link
+            href={`/perros/${dog.id}/historial`}
+            className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50 transition-colors dark:border-gray-700 dark:hover:bg-gray-800"
+          >
+            <div>
+              <span className="text-sm font-semibold">Ver gráfico temporal</span>
+              <span className="block text-xs text-gray-500 dark:text-gray-400">
+                Historial completo con líneas de referencia
+              </span>
+            </div>
+            <span className="text-gray-400">&rarr;</span>
+          </Link>
+        )}
+
         {/* Measurement history */}
         {measurements.length > 0 && (
           <div>
