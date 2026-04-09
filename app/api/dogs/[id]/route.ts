@@ -10,6 +10,7 @@ interface UpdateDogBody {
   weight?: number | null;
   birthDate?: string | null;
   cardiacCondition?: string | null;
+  rpmThreshold?: number;
 }
 
 export async function GET(
@@ -93,6 +94,16 @@ export async function PUT(
     if (body.birthDate !== undefined) updates.birthDate = body.birthDate;
     if (body.cardiacCondition !== undefined)
       updates.cardiacCondition = body.cardiacCondition?.trim() || null;
+    if (body.rpmThreshold !== undefined) {
+      const threshold = Number(body.rpmThreshold);
+      if (isNaN(threshold) || threshold < 10 || threshold > 80) {
+        return NextResponse.json(
+          { error: "El umbral debe estar entre 10 y 80 rpm" },
+          { status: 400 }
+        );
+      }
+      updates.rpmThreshold = threshold;
+    }
 
     await db
       .update(dogs)

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback, use } from "react";
 import Link from "next/link";
-import RpmAlert, { getRpmAlertLevel } from "@/app/perros/components/rpm-alert";
+import RpmAlert, { getRpmAlertLevel, DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
+import type { Dog } from "@/lib/db/schema";
 
 type MeasurementState = "setup" | "measuring" | "review" | "saving" | "done";
 
@@ -19,6 +20,7 @@ export default function MedicionPage({
 }) {
   const { id: dogId } = use(params);
 
+  const [dog, setDog] = useState<Dog | null>(null);
   const [duration, setDuration] = useState<30 | 60>(30);
   const [state, setState] = useState<MeasurementState>("setup");
   const [breathCount, setBreathCount] = useState(0);
@@ -26,6 +28,24 @@ export default function MedicionPage({
   const [result, setResult] = useState<MeasurementResult | null>(null);
   const [error, setError] = useState("");
   const [notes, setNotes] = useState("");
+
+  const rpmThreshold = dog?.rpmThreshold ?? DEFAULT_RPM_THRESHOLD;
+
+  // Fetch dog to get custom threshold
+  useEffect(() => {
+    async function fetchDog() {
+      try {
+        const res = await fetch(`/api/dogs/${dogId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setDog(data.dog);
+        }
+      } catch {
+        // Non-critical - will use default threshold
+      }
+    }
+    fetchDog();
+  }, [dogId]);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -119,7 +139,7 @@ export default function MedicionPage({
 
   // Shared result display for review and done states
   if ((state === "review" || state === "done") && result) {
-    const alertLevel = getRpmAlertLevel(result.breathsPerMinute);
+    const alertLevel = getRpmAlertLevel(result.breathsPerMinute, rpmThreshold);
     const resultIcon =
       alertLevel === "urgent" ? "🚨" : alertLevel === "elevated" ? "⚠️" : "✅";
     const rpmColorClass =
@@ -163,7 +183,7 @@ export default function MedicionPage({
             </div>
           </div>
 
-          <RpmAlert rpm={result.breathsPerMinute} />
+          <RpmAlert rpm={result.breathsPerMinute} threshold={rpmThreshold} />
 
           {/* Notes input - shown during review before saving */}
           {state === "review" && (

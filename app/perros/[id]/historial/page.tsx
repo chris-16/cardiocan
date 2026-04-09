@@ -4,6 +4,7 @@ import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
 import MeasurementChart from "@/app/perros/components/measurement-chart";
+import { DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 
 type TimeRange = "7d" | "14d" | "30d" | "all";
 
@@ -132,18 +133,18 @@ export default function HistorialPage({
 
       {/* Chart */}
       <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-        <MeasurementChart measurements={filteredMeasurements} />
+        <MeasurementChart measurements={filteredMeasurements} rpmThreshold={dog.rpmThreshold ?? DEFAULT_RPM_THRESHOLD} />
       </div>
 
       {/* Legend */}
       <div className="mt-4 flex flex-wrap gap-4 text-xs text-gray-500 dark:text-gray-400">
         <div className="flex items-center gap-1.5">
           <span className="inline-block h-0.5 w-4 bg-amber-500" style={{ borderTop: "2px dashed #f59e0b" }} />
-          <span>30 rpm - Elevada</span>
+          <span>{dog.rpmThreshold ?? DEFAULT_RPM_THRESHOLD} rpm - Elevada</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="inline-block h-0.5 w-4 bg-red-500" style={{ borderTop: "2px dashed #ef4444" }} />
-          <span>40 rpm - Urgente</span>
+          <span>{(dog.rpmThreshold ?? DEFAULT_RPM_THRESHOLD) + 10} rpm - Urgente</span>
         </div>
       </div>
 

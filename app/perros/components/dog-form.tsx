@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import type { Dog } from "@/lib/db/schema";
+import { DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 
 interface DogFormProps {
   dog?: Dog;
@@ -16,6 +17,7 @@ export interface DogFormData {
   weight: string;
   birthDate: string;
   cardiacCondition: string;
+  rpmThreshold: string;
 }
 
 export default function DogForm({
@@ -33,6 +35,9 @@ export default function DogForm({
   const [cardiacCondition, setCardiacCondition] = useState(
     dog?.cardiacCondition ?? ""
   );
+  const [rpmThreshold, setRpmThreshold] = useState(
+    (dog?.rpmThreshold ?? DEFAULT_RPM_THRESHOLD).toString()
+  );
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -42,7 +47,7 @@ export default function DogForm({
     setLoading(true);
 
     try {
-      await onSubmit({ name, breed, weight, birthDate, cardiacCondition });
+      await onSubmit({ name, breed, weight, birthDate, cardiacCondition, rpmThreshold });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
     } finally {
@@ -143,6 +148,26 @@ export default function DogForm({
           <option value="PDA">PDA (Conducto arterioso persistente)</option>
           <option value="Otra">Otra</option>
         </select>
+      </div>
+
+      <div>
+        <label htmlFor="rpmThreshold" className="block text-sm font-medium mb-1">
+          Umbral de alerta (rpm)
+        </label>
+        <input
+          id="rpmThreshold"
+          type="number"
+          step="1"
+          min="10"
+          max="80"
+          value={rpmThreshold}
+          onChange={(e) => setRpmThreshold(e.target.value)}
+          className={inputClass}
+          placeholder="30"
+        />
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          Frecuencia respiratoria (resp/min) que dispara las alertas. Por defecto: {DEFAULT_RPM_THRESHOLD} rpm.
+        </p>
       </div>
 
       <button

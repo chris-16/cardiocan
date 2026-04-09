@@ -46,6 +46,7 @@ export default function EditDogPage({
         weight: data.weight ? Math.round(parseFloat(data.weight) * 1000) : null,
         birthDate: data.birthDate || null,
         cardiacCondition: data.cardiacCondition || null,
+        rpmThreshold: data.rpmThreshold ? parseInt(data.rpmThreshold, 10) : 30,
       }),
     });
 

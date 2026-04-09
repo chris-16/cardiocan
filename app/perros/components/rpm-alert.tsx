@@ -1,23 +1,26 @@
 export type RpmAlertLevel = "normal" | "elevated" | "urgent";
 
-export function getRpmAlertLevel(rpm: number): RpmAlertLevel {
-  if (rpm > 40) return "urgent";
-  if (rpm > 30) return "elevated";
+export const DEFAULT_RPM_THRESHOLD = 30;
+
+export function getRpmAlertLevel(rpm: number, threshold: number = DEFAULT_RPM_THRESHOLD): RpmAlertLevel {
+  if (rpm > threshold + 10) return "urgent";
+  if (rpm > threshold) return "elevated";
   return "normal";
 }
 
 interface RpmAlertProps {
   rpm: number;
+  threshold?: number;
 }
 
 /**
  * Visual alert banner based on respiratory rate thresholds:
- * - Normal (≤30 rpm): no alert shown
- * - Elevated (>30 rpm): yellow/orange warning
- * - Urgent (>40 rpm): red urgent alert
+ * - Normal (≤threshold rpm): no alert shown
+ * - Elevated (>threshold rpm): yellow/orange warning
+ * - Urgent (>threshold+10 rpm): red urgent alert
  */
-export default function RpmAlert({ rpm }: RpmAlertProps) {
-  const level = getRpmAlertLevel(rpm);
+export default function RpmAlert({ rpm, threshold = DEFAULT_RPM_THRESHOLD }: RpmAlertProps) {
+  const level = getRpmAlertLevel(rpm, threshold);
 
   if (level === "normal") return null;
 
@@ -34,8 +37,8 @@ export default function RpmAlert({ rpm }: RpmAlertProps) {
               ¡Alerta urgente!
             </p>
             <p className="mt-1 text-sm text-red-700 dark:text-red-400">
-              La frecuencia respiratoria ({rpm} rpm) es muy elevada. Contacta a tu
-              veterinario lo antes posible.
+              La frecuencia respiratoria ({rpm} rpm) es muy elevada (umbral: {threshold} rpm).
+              Contacta a tu veterinario lo antes posible.
             </p>
           </div>
         </div>
@@ -56,7 +59,7 @@ export default function RpmAlert({ rpm }: RpmAlertProps) {
             Frecuencia elevada
           </p>
           <p className="mt-1 text-sm text-orange-700 dark:text-orange-400">
-            La frecuencia respiratoria ({rpm} rpm) está por encima de lo normal.
+            La frecuencia respiratoria ({rpm} rpm) está por encima del umbral configurado ({threshold} rpm).
             Considera consultar con tu veterinario si persiste.
           </p>
         </div>

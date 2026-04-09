@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
 import PhotoUpload from "@/app/perros/components/photo-upload";
-import RpmAlert, { getRpmAlertLevel } from "@/app/perros/components/rpm-alert";
+import RpmAlert, { getRpmAlertLevel, DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 import MeasurementNotes from "@/app/perros/components/measurement-notes";
 
 function formatWeight(weightGrams: number | null): string {
@@ -172,6 +172,14 @@ export default function DogDetailPage({
               {dog.cardiacCondition || "—"}
             </span>
           </div>
+          <div className="flex justify-between px-4 py-3">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              Umbral de alerta
+            </span>
+            <span className="text-sm font-medium">
+              {dog.rpmThreshold ?? DEFAULT_RPM_THRESHOLD} rpm
+            </span>
+          </div>
         </div>
 
         {/* Measurement CTA */}
@@ -187,7 +195,7 @@ export default function DogDetailPage({
 
         {/* Latest measurement alert */}
         {measurements.length > 0 && (
-          <RpmAlert rpm={measurements[0].breathsPerMinute} />
+          <RpmAlert rpm={measurements[0].breathsPerMinute} threshold={dog.rpmThreshold ?? DEFAULT_RPM_THRESHOLD} />
         )}
 
         {/* Chart link */}
@@ -217,7 +225,7 @@ export default function DogDetailPage({
                     ? m.createdAt * 1000
                     : m.createdAt
                 );
-                const alertLevel = getRpmAlertLevel(m.breathsPerMinute);
+                const alertLevel = getRpmAlertLevel(m.breathsPerMinute, dog.rpmThreshold ?? DEFAULT_RPM_THRESHOLD);
                 const rpmColorClass =
                   alertLevel === "urgent"
                     ? "text-red-600 dark:text-red-400"

@@ -34,6 +34,7 @@ export const dogs = sqliteTable("dogs", {
   weight: integer("weight"), // weight in grams for precision
   birthDate: text("birth_date"), // ISO date string (YYYY-MM-DD)
   cardiacCondition: text("cardiac_condition"),
+  rpmThreshold: integer("rpm_threshold").notNull().default(30), // breaths/min alert threshold
   photoUrl: text("photo_url"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

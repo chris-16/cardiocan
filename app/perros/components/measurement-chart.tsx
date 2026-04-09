@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { RespiratoryMeasurement } from "@/lib/db/schema";
+import { DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 
 interface ChartDataPoint {
   date: string;
@@ -23,6 +24,7 @@ interface ChartDataPoint {
 
 interface MeasurementChartProps {
   measurements: RespiratoryMeasurement[];
+  rpmThreshold?: number;
 }
 
 function formatDate(timestamp: number): string {
@@ -75,7 +77,7 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
   );
 }
 
-export default function MeasurementChart({ measurements }: MeasurementChartProps) {
+export default function MeasurementChart({ measurements, rpmThreshold = DEFAULT_RPM_THRESHOLD }: MeasurementChartProps) {
   if (measurements.length === 0) {
     return (
       <div className="flex items-center justify-center rounded-lg border border-gray-200 py-12 dark:border-gray-700">
@@ -107,7 +109,8 @@ export default function MeasurementChart({ measurements }: MeasurementChartProps
     };
   });
 
-  const maxRpm = Math.max(...data.map((d) => d.rpm), 45);
+  const urgentThreshold = rpmThreshold + 10;
+  const maxRpm = Math.max(...data.map((d) => d.rpm), urgentThreshold + 5);
   const yMax = Math.ceil(maxRpm / 5) * 5 + 5;
 
   return (
@@ -134,21 +137,21 @@ export default function MeasurementChart({ measurements }: MeasurementChartProps
           />
           <Tooltip content={<CustomTooltip />} />
           <ReferenceLine
-            y={30}
+            y={rpmThreshold}
             stroke="#f59e0b"
             strokeDasharray="6 3"
             label={{
-              value: "30 rpm",
+              value: `${rpmThreshold} rpm`,
               position: "right",
               style: { fontSize: 11, fill: "#f59e0b" },
             }}
           />
           <ReferenceLine
-            y={40}
+            y={urgentThreshold}
             stroke="#ef4444"
             strokeDasharray="6 3"
             label={{
-              value: "40 rpm",
+              value: `${urgentThreshold} rpm`,
               position: "right",
               style: { fontSize: 11, fill: "#ef4444" },
             }}
