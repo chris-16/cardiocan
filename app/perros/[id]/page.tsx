@@ -280,6 +280,20 @@ export default function DogDetailPage({
           </Link>
         )}
 
+        {/* Timeline link */}
+        <Link
+          href={`/perros/${dog.id}/timeline`}
+          className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50 transition-colors dark:border-gray-700 dark:hover:bg-gray-800"
+        >
+          <div>
+            <span className="text-sm font-semibold">📋 Timeline de eventos</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              Vista cronológica de mediciones, medicación y notas
+            </span>
+          </div>
+          <span className="text-gray-400">&rarr;</span>
+        </Link>
+
         {/* Calibration history link */}
         <Link
           href={`/perros/${dog.id}/calibracion`}
