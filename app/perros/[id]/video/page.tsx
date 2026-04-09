@@ -6,6 +6,21 @@ import VideoRecorder from "@/app/perros/components/video-recorder";
 
 type PageState = "instructions" | "recording" | "preview";
 
+interface AnalysisResult {
+  breathCount: number;
+  durationSeconds: number;
+  breathsPerMinute: number;
+  confidence: "alta" | "media" | "baja";
+  notes: string;
+}
+
+interface AnalysisResponse {
+  success: boolean;
+  analysis: AnalysisResult;
+  measurementId?: string;
+  message?: string;
+}
+
 export default function VideoPage({
   params,
 }: {
@@ -16,7 +31,8 @@ export default function VideoPage({
   const [pageState, setPageState] = useState<PageState>("instructions");
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [done, setDone] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [result, setResult] = useState<AnalysisResponse | null>(null);
 
   const videoBlobRef = useRef<Blob | null>(null);
 
@@ -29,58 +45,208 @@ export default function VideoPage({
   function handleReset() {
     videoBlobRef.current = null;
     setVideoBlob(null);
+    setAnalysisError(null);
     setPageState("recording");
   }
 
   async function handleAnalyze() {
     if (!videoBlob) return;
     setAnalyzing(true);
+    setAnalysisError(null);
 
-    // Upload video for future analysis
     try {
       const formData = new FormData();
       formData.append("video", videoBlob, "respiracion.webm");
 
-      const res = await fetch(`/api/dogs/${dogId}/video`, {
+      const res = await fetch(`/api/dogs/${dogId}/analyze-video`, {
         method: "POST",
         body: formData,
       });
 
+      const data = (await res.json()) as AnalysisResponse & { error?: string };
+
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Error al subir el video");
+        throw new Error(data.error || "Error al analizar el video");
       }
 
-      setDone(true);
+      setResult(data);
     } catch (err) {
-      // For now, just mark as done since the API endpoint may not exist yet
-      // The video was recorded successfully - analysis will come later
-      setDone(true);
+      const message =
+        err instanceof Error ? err.message : "Error inesperado al analizar el video";
+      setAnalysisError(message);
     } finally {
       setAnalyzing(false);
     }
   }
 
-  if (done) {
+  function resetAll() {
+    setResult(null);
+    setVideoBlob(null);
+    setAnalysisError(null);
+    setPageState("instructions");
+  }
+
+  // --- Results screen ---
+  if (result) {
+    const { analysis, success } = result;
+    const rpm = analysis.breathsPerMinute;
+    const isNormal = rpm > 0 && rpm <= 30;
+    const isElevated = rpm > 30 && rpm <= 40;
+    const isUrgent = rpm > 40;
+
     return (
       <div className="mx-auto max-w-lg px-4 py-8">
-        <div className="space-y-6 text-center">
-          <div className="text-6xl">✅</div>
-          <div>
-            <h2 className="text-2xl font-bold">Video grabado</h2>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              El video ha sido grabado exitosamente. El análisis automático de
-              frecuencia respiratoria estará disponible próximamente.
-            </p>
-          </div>
+        <div className="space-y-6">
+          {success ? (
+            <>
+              {/* RPM result */}
+              <div className="text-center">
+                <div
+                  className={`inline-flex items-center justify-center w-32 h-32 rounded-full ${
+                    isNormal
+                      ? "bg-green-100 dark:bg-green-900/30"
+                      : isElevated
+                        ? "bg-yellow-100 dark:bg-yellow-900/30"
+                        : "bg-red-100 dark:bg-red-900/30"
+                  }`}
+                >
+                  <div>
+                    <span
+                      className={`block text-4xl font-bold ${
+                        isNormal
+                          ? "text-green-700 dark:text-green-400"
+                          : isElevated
+                            ? "text-yellow-700 dark:text-yellow-400"
+                            : "text-red-700 dark:text-red-400"
+                      }`}
+                    >
+                      {rpm}
+                    </span>
+                    <span className="block text-sm text-gray-500 dark:text-gray-400">
+                      rpm
+                    </span>
+                  </div>
+                </div>
+              </div>
 
+              {/* Status message */}
+              <div
+                className={`rounded-lg border p-4 text-center ${
+                  isNormal
+                    ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                    : isElevated
+                      ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20"
+                      : "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
+                }`}
+              >
+                <p
+                  className={`text-sm font-medium ${
+                    isNormal
+                      ? "text-green-700 dark:text-green-400"
+                      : isElevated
+                        ? "text-yellow-700 dark:text-yellow-400"
+                        : "text-red-700 dark:text-red-400"
+                  }`}
+                >
+                  {isNormal && "Frecuencia respiratoria normal"}
+                  {isElevated && "Frecuencia respiratoria elevada"}
+                  {isUrgent &&
+                    "Frecuencia respiratoria alta — consulta al veterinario"}
+                </p>
+              </div>
+
+              {/* Details */}
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+                <div className="flex justify-between px-4 py-3">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    Respiraciones contadas
+                  </span>
+                  <span className="text-sm font-medium">
+                    {analysis.breathCount}
+                  </span>
+                </div>
+                <div className="flex justify-between px-4 py-3">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    Duración del video
+                  </span>
+                  <span className="text-sm font-medium">
+                    {analysis.durationSeconds}s
+                  </span>
+                </div>
+                <div className="flex justify-between px-4 py-3">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    Confianza del análisis
+                  </span>
+                  <span
+                    className={`text-sm font-medium ${
+                      analysis.confidence === "alta"
+                        ? "text-green-600 dark:text-green-400"
+                        : analysis.confidence === "media"
+                          ? "text-yellow-600 dark:text-yellow-400"
+                          : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {analysis.confidence === "alta" && "Alta"}
+                    {analysis.confidence === "media" && "Media"}
+                    {analysis.confidence === "baja" && "Baja"}
+                  </span>
+                </div>
+                {analysis.notes && (
+                  <div className="px-4 py-3">
+                    <span className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+                      Observaciones
+                    </span>
+                    <span className="text-sm">{analysis.notes}</span>
+                  </div>
+                )}
+              </div>
+
+              {analysis.confidence === "baja" && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    <strong>Nota:</strong> La confianza del análisis es baja.
+                    Considera hacer una medición manual para confirmar el
+                    resultado.
+                  </p>
+                </div>
+              )}
+
+              <p className="text-xs text-center text-gray-500 dark:text-gray-400">
+                La medición ha sido guardada automáticamente en el historial.
+              </p>
+            </>
+          ) : (
+            <>
+              {/* Analysis failed to count breaths */}
+              <div className="text-center">
+                <div className="text-6xl mb-4">⚠️</div>
+                <h2 className="text-xl font-bold">
+                  No se pudieron contar las respiraciones
+                </h2>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  {result.message ||
+                    "El video no permitió un análisis confiable."}
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  <strong>Sugerencias:</strong>
+                </p>
+                <ul className="mt-2 text-sm text-amber-700 dark:text-amber-400 list-disc list-inside space-y-1">
+                  <li>Asegúrate de que el pecho del perro sea visible</li>
+                  <li>Graba con buena iluminación</li>
+                  <li>Mantén la cámara estable</li>
+                  <li>El perro debe estar en reposo</li>
+                </ul>
+              </div>
+            </>
+          )}
+
+          {/* Action buttons */}
           <div className="flex gap-3">
             <button
-              onClick={() => {
-                setDone(false);
-                setVideoBlob(null);
-                setPageState("instructions");
-              }}
+              onClick={resetAll}
               className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
             >
               Grabar otro video
@@ -109,11 +275,11 @@ export default function VideoPage({
       </div>
 
       <h1 className="text-2xl font-bold mb-2">
-        Grabación de video respiratorio
+        Análisis de respiración por IA
       </h1>
       <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-        Graba un video de 30 a 60 segundos para el análisis automático de
-        frecuencia respiratoria.
+        Graba un video de 30 a 60 segundos y la IA contará automáticamente las
+        respiraciones por minuto.
       </p>
 
       {/* Instructions screen */}
@@ -121,7 +287,7 @@ export default function VideoPage({
         <div className="space-y-6">
           <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20 p-4">
             <h2 className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-3">
-              📋 Instrucciones para una buena grabación
+              Instrucciones para una buena grabación
             </h2>
             <ol className="space-y-3 text-sm text-blue-700 dark:text-blue-400">
               <li className="flex gap-2">
@@ -166,9 +332,9 @@ export default function VideoPage({
 
           <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
             <p className="text-sm text-amber-700 dark:text-amber-400">
-              <strong>💡 Consejo:</strong> Los mejores resultados se obtienen
-              cuando el perro lleva al menos 15 minutos en reposo. Evita
-              grabarlo si está jadeando o agitado.
+              <strong>Consejo:</strong> Los mejores resultados se obtienen cuando
+              el perro lleva al menos 15 minutos en reposo. Evita grabarlo si
+              está jadeando o agitado.
             </p>
           </div>
 
@@ -213,18 +379,43 @@ export default function VideoPage({
                 </div>
               </div>
 
+              {/* Analysis error */}
+              {analysisError && (
+                <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4">
+                  <p className="text-sm text-red-700 dark:text-red-400">
+                    {analysisError}
+                  </p>
+                </div>
+              )}
+
               <button
                 onClick={handleAnalyze}
                 disabled={analyzing}
                 className="w-full rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {analyzing ? "Enviando video..." : "Enviar para analizar"}
+                {analyzing ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Analizando respiración...
+                  </span>
+                ) : (
+                  "Analizar respiración con IA"
+                )}
               </button>
 
-              <p className="text-xs text-center text-gray-500 dark:text-gray-400">
-                Revisa el video antes de enviarlo. Puedes reproducirlo usando
-                los controles del reproductor.
-              </p>
+              {analyzing && (
+                <p className="text-xs text-center text-gray-500 dark:text-gray-400">
+                  El análisis puede tomar entre 15 y 60 segundos dependiendo de
+                  la duración del video.
+                </p>
+              )}
+
+              {!analyzing && (
+                <p className="text-xs text-center text-gray-500 dark:text-gray-400">
+                  Revisa el video antes de enviarlo. Puedes reproducirlo usando
+                  los controles del reproductor.
+                </p>
+              )}
             </div>
           )}
 
