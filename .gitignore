@@ -5,6 +5,9 @@ local.db
 local.db-wal
 local.db-shm
 
+# uploaded files
+/public/uploads
+
 # dependencies
 /node_modules
 /.pnp
