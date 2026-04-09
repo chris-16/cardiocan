@@ -1,5 +1,10 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# local database
+local.db
+local.db-wal
+local.db-shm
+
 # dependencies
 /node_modules
 /.pnp
