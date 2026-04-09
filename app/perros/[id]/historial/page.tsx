@@ -4,6 +4,7 @@ import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
 import MeasurementChart from "@/app/perros/components/measurement-chart";
+import ShareHistoryButton from "@/app/perros/components/share-history-button";
 import { DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 
 type MeasurementWithUser = RespiratoryMeasurement & {
@@ -342,6 +343,13 @@ export default function HistorialPage({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Share history */}
+      {dog && (
+        <div className="mt-6">
+          <ShareHistoryButton dogId={id} dogName={dog.name} />
         </div>
       )}
     </div>

@@ -11,6 +11,7 @@ import RpmAlert, { getRpmAlertLevel, DEFAULT_RPM_THRESHOLD } from "@/app/perros/
 import MeasurementNotes from "@/app/perros/components/measurement-notes";
 import DogShares from "@/app/perros/components/dog-shares";
 import ExportPdfButton from "@/app/perros/components/export-pdf-button";
+import ShareHistoryButton from "@/app/perros/components/share-history-button";
 
 function formatWeight(weightGrams: number | null): string {
   if (!weightGrams) return "—";
@@ -281,6 +282,9 @@ export default function DogDetailPage({
 
         {/* Export PDF */}
         <ExportPdfButton dogId={dog.id} dogName={dog.name} />
+
+        {/* Share history via email/WhatsApp */}
+        <ShareHistoryButton dogId={dog.id} dogName={dog.name} />
 
         {/* Measurement history */}
         {measurements.length > 0 && (
