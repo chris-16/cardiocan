@@ -264,6 +264,20 @@ export default function DogDetailPage({
           </Link>
         )}
 
+        {/* Calibration history link */}
+        <Link
+          href={`/perros/${dog.id}/calibracion`}
+          className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50 transition-colors dark:border-gray-700 dark:hover:bg-gray-800"
+        >
+          <div>
+            <span className="text-sm font-semibold">📊 Calibración AI</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              Historial de precisión AI vs correcciones manuales
+            </span>
+          </div>
+          <span className="text-gray-400">&rarr;</span>
+        </Link>
+
         {/* Measurement history */}
         {measurements.length > 0 && (
           <div>

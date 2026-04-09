@@ -176,3 +176,29 @@ export type MedicationLog = typeof medicationLogs.$inferSelect;
 export type NewMedicationLog = typeof medicationLogs.$inferInsert;
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
 export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
+
+export const calibrationRecords = sqliteTable("calibration_records", {
+  id: text("id").primaryKey(), // UUID
+  dogId: text("dog_id")
+    .notNull()
+    .references(() => dogs.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  measurementId: text("measurement_id")
+    .notNull()
+    .references(() => respiratoryMeasurements.id, { onDelete: "cascade" }),
+  aiBreathsPerMinute: integer("ai_breaths_per_minute").notNull(), // Original AI result
+  finalBreathsPerMinute: integer("final_breaths_per_minute").notNull(), // Accepted or corrected value
+  deviation: integer("deviation").notNull(), // Absolute difference (ai - final)
+  action: text("action").notNull(), // 'accepted' | 'corrected'
+  aiMethod: text("ai_method").notNull(), // 'cloud' | 'on-device'
+  aiConfidence: text("ai_confidence").notNull(), // 'alta' | 'media' | 'baja'
+  correctionNotes: text("correction_notes"), // Optional note when correcting
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export type CalibrationRecord = typeof calibrationRecords.$inferSelect;
+export type NewCalibrationRecord = typeof calibrationRecords.$inferInsert;

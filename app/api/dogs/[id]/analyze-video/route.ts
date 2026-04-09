@@ -138,6 +138,20 @@ export async function POST(
       historicalAiErrors,
     });
 
+    // Check if caller wants to skip saving (for calibration flow)
+    const skipSave = formData.get("skipSave") === "true";
+
+    if (skipSave) {
+      return NextResponse.json({
+        success: true,
+        analysis: {
+          ...analysis,
+          breathsPerMinute,
+        },
+        validation,
+      });
+    }
+
     // Save measurement to database
     const measurementId = crypto.randomUUID();
 

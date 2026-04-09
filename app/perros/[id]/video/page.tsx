@@ -10,7 +10,6 @@ import type { AnalysisMethod } from "@/app/perros/components/analysis-method-sel
 import type { ValidationResult, ManualComparison } from "@/lib/analysis-validation";
 import type { ROI, AnalysisProgress, OnDeviceAnalysisResult } from "@/lib/on-device-analyzer";
 import {
-  saveMeasurementWithOfflineFallback,
   flushOfflineQueue,
   onOfflineQueueSynced,
   getPendingMeasurementCount,
@@ -21,7 +20,8 @@ type PageState =
   | "recording"
   | "preview"
   | "roi-selection"
-  | "on-device-analyzing";
+  | "on-device-analyzing"
+  | "calibration";
 
 interface AnalysisResult {
   breathCount: number;
@@ -55,9 +55,18 @@ export default function VideoPage({
   const [onDeviceProgress, setOnDeviceProgress] =
     useState<AnalysisProgress | null>(null);
   const [usedMethod, setUsedMethod] = useState<AnalysisMethod | null>(null);
-  const [savedOffline, setSavedOffline] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [offlineSyncedMsg, setOfflineSyncedMsg] = useState<string | null>(null);
+
+  // Calibration state
+  const [calibrationAction, setCalibrationAction] = useState<
+    "pending" | "accepted" | "corrected"
+  >("pending");
+  const [correctedRpm, setCorrectedRpm] = useState<string>("");
+  const [correctionNotes, setCorrectionNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savedOffline, setSavedOffline] = useState(false);
 
   const videoBlobRef = useRef<Blob | null>(null);
 
@@ -99,7 +108,7 @@ export default function VideoPage({
     setPageState("recording");
   }
 
-  // --- Cloud analysis (Gemini) ---
+  // --- Cloud analysis (Gemini) — skip saving for calibration flow ---
   async function handleCloudAnalyze() {
     if (!videoBlob) return;
     setAnalyzing(true);
@@ -109,6 +118,7 @@ export default function VideoPage({
     try {
       const formData = new FormData();
       formData.append("video", videoBlob, "respiracion.webm");
+      formData.append("skipSave", "true");
 
       const res = await fetch(`/api/dogs/${dogId}/analyze-video`, {
         method: "POST",
@@ -122,6 +132,9 @@ export default function VideoPage({
       }
 
       setResult(data);
+      if (data.success) {
+        setPageState("calibration");
+      }
     } catch (err) {
       const message =
         err instanceof Error
@@ -133,7 +146,7 @@ export default function VideoPage({
     }
   }
 
-  // --- On-device analysis ---
+  // --- On-device analysis — don't save, go to calibration ---
   function handleStartOnDeviceAnalysis() {
     if (!videoBlob) return;
     setAnalysisError(null);
@@ -158,36 +171,19 @@ export default function VideoPage({
           setOnDeviceProgress(progress);
         });
 
-      // Save the result to the server (with offline fallback)
-      const saveUrl = `/api/dogs/${dogId}/on-device-measurement`;
-      const saveResult = await saveMeasurementWithOfflineFallback(
-        saveUrl,
-        analysisResult as unknown as Record<string, unknown>
-      );
+      // Don't save yet — go to calibration review
+      setResult({
+        success: true,
+        analysis: {
+          breathCount: analysisResult.breathCount,
+          durationSeconds: analysisResult.durationSeconds,
+          breathsPerMinute: analysisResult.breathsPerMinute,
+          confidence: analysisResult.confidence,
+          notes: analysisResult.notes,
+        },
+      });
 
-      if (saveResult.online) {
-        const data = saveResult.data as unknown as AnalysisResponse & {
-          error?: string;
-        };
-        setResult(data);
-      } else {
-        // Measurement queued for offline sync — show result locally
-        setSavedOffline(true);
-        const pending = await getPendingMeasurementCount();
-        setPendingCount(pending);
-        setResult({
-          success: true,
-          analysis: {
-            breathCount: analysisResult.breathCount,
-            durationSeconds: analysisResult.durationSeconds,
-            breathsPerMinute: analysisResult.breathsPerMinute,
-            confidence: analysisResult.confidence,
-            notes: analysisResult.notes,
-          },
-        });
-      }
-
-      setPageState("preview"); // Reset page state
+      setPageState("calibration");
     } catch (err) {
       const message =
         err instanceof Error
@@ -208,18 +204,84 @@ export default function VideoPage({
     }
   }
 
+  // --- Calibration: Accept or Correct ---
+  async function handleCalibrationConfirm(action: "accepted" | "corrected") {
+    if (!result?.analysis) return;
+
+    const { analysis } = result;
+    const finalRpm =
+      action === "accepted"
+        ? analysis.breathsPerMinute
+        : parseInt(correctedRpm, 10);
+
+    if (action === "corrected" && (isNaN(finalRpm) || finalRpm < 1 || finalRpm > 120)) {
+      setAnalysisError("Ingresa un valor válido entre 1 y 120 rpm.");
+      return;
+    }
+
+    setSaving(true);
+    setAnalysisError(null);
+
+    try {
+      const res = await fetch(`/api/dogs/${dogId}/calibrations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          aiBreathCount: analysis.breathCount,
+          aiDurationSeconds: analysis.durationSeconds,
+          aiBreathsPerMinute: analysis.breathsPerMinute,
+          aiConfidence: analysis.confidence,
+          aiNotes: analysis.notes || "",
+          aiMethod: usedMethod === "on-device" ? "on-device" : "cloud",
+          finalBreathsPerMinute: finalRpm,
+          action,
+          correctionNotes: correctionNotes.trim() || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Error al guardar la calibración");
+      }
+
+      setCalibrationAction(action);
+      setSaved(true);
+    } catch (err) {
+      if (!navigator.onLine && usedMethod === "on-device") {
+        // Offline fallback for on-device measurements
+        setSavedOffline(true);
+        const pending = await getPendingMeasurementCount();
+        setPendingCount(pending);
+        setCalibrationAction(action);
+        setSaved(true);
+      } else {
+        const message =
+          err instanceof Error ? err.message : "Error inesperado";
+        setAnalysisError(message);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function resetAll() {
     setResult(null);
     setVideoBlob(null);
     setAnalysisError(null);
     setOnDeviceProgress(null);
     setUsedMethod(null);
+    setCalibrationAction("pending");
+    setCorrectedRpm("");
+    setCorrectionNotes("");
+    setSaving(false);
+    setSaved(false);
+    setSavedOffline(false);
     setPageState("instructions");
   }
 
-  // --- Results screen ---
-  if (result) {
-    const { analysis, success, validation } = result;
+  // --- Calibration review screen ---
+  if (pageState === "calibration" && result) {
+    const { analysis, validation } = result;
     const rpm = analysis.breathsPerMinute;
     const isNormal = rpm > 0 && rpm <= 30;
     const isElevated = rpm > 30 && rpm <= 40;
@@ -228,66 +290,44 @@ export default function VideoPage({
     return (
       <div className="mx-auto max-w-lg px-4 py-8">
         <div className="space-y-6">
-          {success ? (
-            <>
-              {/* Method badge */}
-              <div className="flex justify-center">
+          {/* Header */}
+          <div className="text-center">
+            <h1 className="text-xl font-bold">Revisar resultado AI</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Acepta o corrige el resultado antes de guardarlo
+            </p>
+          </div>
+
+          {/* Method badge */}
+          <div className="flex justify-center">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                usedMethod === "on-device"
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+              }`}
+            >
+              {usedMethod === "on-device" ? "📱" : "☁️"}
+              {usedMethod === "on-device"
+                ? "Análisis en dispositivo"
+                : "Análisis cloud (Gemini)"}
+            </span>
+          </div>
+
+          {/* AI RPM result */}
+          <div className="text-center">
+            <div
+              className={`inline-flex items-center justify-center w-32 h-32 rounded-full ${
+                isNormal
+                  ? "bg-green-100 dark:bg-green-900/30"
+                  : isElevated
+                    ? "bg-yellow-100 dark:bg-yellow-900/30"
+                    : "bg-red-100 dark:bg-red-900/30"
+              }`}
+            >
+              <div>
                 <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-                    usedMethod === "on-device"
-                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                      : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                  }`}
-                >
-                  {usedMethod === "on-device" ? "📱" : "☁️"}
-                  {usedMethod === "on-device"
-                    ? "Análisis en dispositivo"
-                    : "Análisis cloud (Gemini)"}
-                </span>
-              </div>
-
-              {/* RPM result */}
-              <div className="text-center">
-                <div
-                  className={`inline-flex items-center justify-center w-32 h-32 rounded-full ${
-                    isNormal
-                      ? "bg-green-100 dark:bg-green-900/30"
-                      : isElevated
-                        ? "bg-yellow-100 dark:bg-yellow-900/30"
-                        : "bg-red-100 dark:bg-red-900/30"
-                  }`}
-                >
-                  <div>
-                    <span
-                      className={`block text-4xl font-bold ${
-                        isNormal
-                          ? "text-green-700 dark:text-green-400"
-                          : isElevated
-                            ? "text-yellow-700 dark:text-yellow-400"
-                            : "text-red-700 dark:text-red-400"
-                      }`}
-                    >
-                      {rpm}
-                    </span>
-                    <span className="block text-sm text-gray-500 dark:text-gray-400">
-                      rpm
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Status message */}
-              <div
-                className={`rounded-lg border p-4 text-center ${
-                  isNormal
-                    ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
-                    : isElevated
-                      ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20"
-                      : "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
-                }`}
-              >
-                <p
-                  className={`text-sm font-medium ${
+                  className={`block text-4xl font-bold ${
                     isNormal
                       ? "text-green-700 dark:text-green-400"
                       : isElevated
@@ -295,196 +335,311 @@ export default function VideoPage({
                         : "text-red-700 dark:text-red-400"
                   }`}
                 >
-                  {isNormal && "Frecuencia respiratoria normal"}
-                  {isElevated && "Frecuencia respiratoria elevada"}
-                  {isUrgent &&
-                    "Frecuencia respiratoria alta — consulta al veterinario"}
-                </p>
+                  {rpm}
+                </span>
+                <span className="block text-sm text-gray-500 dark:text-gray-400">
+                  rpm (AI)
+                </span>
               </div>
+            </div>
+          </div>
 
-              {/* Details */}
-              <div className="rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
-                <div className="flex justify-between px-4 py-3">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    Respiraciones contadas
-                  </span>
-                  <span className="text-sm font-medium">
-                    {analysis.breathCount}
-                  </span>
+          {/* Status message */}
+          <div
+            className={`rounded-lg border p-4 text-center ${
+              isNormal
+                ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                : isElevated
+                  ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20"
+                  : "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
+            }`}
+          >
+            <p
+              className={`text-sm font-medium ${
+                isNormal
+                  ? "text-green-700 dark:text-green-400"
+                  : isElevated
+                    ? "text-yellow-700 dark:text-yellow-400"
+                    : "text-red-700 dark:text-red-400"
+              }`}
+            >
+              {isNormal && "Frecuencia respiratoria normal"}
+              {isElevated && "Frecuencia respiratoria elevada"}
+              {isUrgent &&
+                "Frecuencia respiratoria alta — consulta al veterinario"}
+            </p>
+          </div>
+
+          {/* Details */}
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+            <div className="flex justify-between px-4 py-3">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Respiraciones contadas
+              </span>
+              <span className="text-sm font-medium">
+                {analysis.breathCount}
+              </span>
+            </div>
+            <div className="flex justify-between px-4 py-3">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Duración del video
+              </span>
+              <span className="text-sm font-medium">
+                {analysis.durationSeconds}s
+              </span>
+            </div>
+            <div className="flex justify-between px-4 py-3">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Confianza del análisis
+              </span>
+              <ConfidenceBadge
+                confidence={
+                  validation?.overallConfidence ?? analysis.confidence
+                }
+                aiConfidence={analysis.confidence}
+              />
+            </div>
+          </div>
+
+          {/* Validation: Manual comparison */}
+          {validation?.manualComparison && (
+            <ManualComparisonCard
+              comparison={validation.manualComparison}
+            />
+          )}
+
+          {/* Validation warnings */}
+          {validation && validation.warnings.length > 0 && (
+            <div className="space-y-2">
+              {validation.warnings.map((warning, i) => (
+                <div
+                  key={i}
+                  className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4"
+                >
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    <strong>⚠️ Atención:</strong> {warning}
+                  </p>
                 </div>
-                <div className="flex justify-between px-4 py-3">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    Duración del video
-                  </span>
-                  <span className="text-sm font-medium">
-                    {analysis.durationSeconds}s
-                  </span>
-                </div>
-                <div className="flex justify-between px-4 py-3">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    Confianza del análisis
-                  </span>
-                  <ConfidenceBadge
-                    confidence={
-                      validation?.overallConfidence ?? analysis.confidence
-                    }
-                    aiConfidence={analysis.confidence}
-                  />
-                </div>
-                <div className="flex justify-between px-4 py-3">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    Método
-                  </span>
-                  <span className="text-sm font-medium">
-                    {usedMethod === "on-device"
-                      ? "En dispositivo"
-                      : "Cloud (Gemini)"}
-                  </span>
-                </div>
-                {analysis.notes && (
-                  <div className="px-4 py-3">
-                    <span className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
-                      Observaciones
-                    </span>
-                    <span className="text-sm">{analysis.notes}</span>
-                  </div>
-                )}
-              </div>
+              ))}
+            </div>
+          )}
 
-              {/* Validation: Manual comparison */}
-              {validation?.manualComparison && (
-                <ManualComparisonCard
-                  comparison={validation.manualComparison}
-                />
-              )}
+          {/* Historical accuracy */}
+          {validation && validation.comparisonCount > 0 && (
+            <HistoricalAccuracyCard
+              averageError={validation.averageError}
+              comparisonCount={validation.comparisonCount}
+            />
+          )}
 
-              {/* Validation: Historical accuracy */}
-              {validation && validation.comparisonCount > 0 && (
-                <HistoricalAccuracyCard
-                  averageError={validation.averageError}
-                  comparisonCount={validation.comparisonCount}
-                />
-              )}
+          {/* Calibration action area */}
+          {!saved ? (
+            <div className="rounded-lg border-2 border-blue-200 dark:border-blue-800 p-5 space-y-4">
+              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                ¿El resultado AI es correcto?
+              </h2>
 
-              {/* Validation warnings */}
-              {validation && validation.warnings.length > 0 && (
-                <div className="space-y-2">
-                  {validation.warnings.map((warning, i) => (
-                    <div
-                      key={i}
-                      className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4"
-                    >
-                      <p className="text-sm text-amber-700 dark:text-amber-400">
-                        <strong>⚠️ Atención:</strong> {warning}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Low confidence fallback */}
-              {analysis.confidence === "baja" &&
-                (!validation || validation.warnings.length === 0) && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
-                    <p className="text-sm text-amber-700 dark:text-amber-400">
-                      <strong>Nota:</strong> La confianza del análisis es baja.
-                      Considera hacer una medición manual para confirmar el
-                      resultado.
-                    </p>
-                  </div>
-                )}
-
-              {/* On-device specific note */}
-              {usedMethod === "on-device" && (
-                <div className="rounded-lg border border-green-200 dark:border-green-800 p-4">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                    <strong>Análisis on-device:</strong> El video fue analizado
-                    localmente en tu dispositivo usando MediaPipe Pose
-                    Landmarker para detección de movimiento torácico. No se
-                    envió ningún dato a servidores externos.
+              {analysisError && (
+                <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3">
+                  <p className="text-sm text-red-700 dark:text-red-400">
+                    {analysisError}
                   </p>
                 </div>
               )}
 
-              {/* Scientific benchmark reference */}
-              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                  <strong>Referencia científica:</strong> El análisis por video
-                  se basa en tecnología con un RMSE de 1.1 rpm y correlación de
-                  0.92 respecto a monitores aprobados por la FDA. El objetivo de
-                  precisión es un error {"<"}3 rpm vs medición manual.
+              {/* Accept button */}
+              <button
+                onClick={() => handleCalibrationConfirm("accepted")}
+                disabled={saving}
+                className="w-full rounded-md bg-green-600 px-4 py-3 text-sm font-medium text-white hover:bg-green-700 transition-colors disabled:opacity-50"
+              >
+                {saving ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Guardando...
+                  </span>
+                ) : (
+                  "✅ Aceptar resultado AI"
+                )}
+              </button>
+
+              {/* Divider */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="bg-white dark:bg-gray-900 px-2 text-gray-500">
+                    o corregir
+                  </span>
+                </div>
+              </div>
+
+              {/* Correction inputs */}
+              <div className="space-y-3">
+                <div>
+                  <label
+                    htmlFor="correctedRpm"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    Frecuencia respiratoria correcta (rpm)
+                  </label>
+                  <input
+                    id="correctedRpm"
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={correctedRpm}
+                    onChange={(e) => setCorrectedRpm(e.target.value)}
+                    placeholder={`AI midió ${rpm} rpm`}
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="correctionNotes"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    Nota de corrección (opcional)
+                  </label>
+                  <input
+                    id="correctionNotes"
+                    type="text"
+                    value={correctionNotes}
+                    onChange={(e) => setCorrectionNotes(e.target.value)}
+                    placeholder="Ej: Conté manualmente durante el video"
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <button
+                  onClick={() => handleCalibrationConfirm("corrected")}
+                  disabled={saving || !correctedRpm}
+                  className="w-full rounded-md bg-amber-600 px-4 py-3 text-sm font-medium text-white hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Guardando...
+                    </span>
+                  ) : (
+                    "✏️ Corregir y guardar"
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Post-save confirmation */
+            <div className="space-y-4">
+              <div
+                className={`rounded-lg border p-4 text-center ${
+                  calibrationAction === "accepted"
+                    ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                    : "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20"
+                }`}
+              >
+                <p
+                  className={`text-sm font-medium ${
+                    calibrationAction === "accepted"
+                      ? "text-green-700 dark:text-green-400"
+                      : "text-amber-700 dark:text-amber-400"
+                  }`}
+                >
+                  {calibrationAction === "accepted"
+                    ? "✅ Resultado AI aceptado y guardado"
+                    : `✏️ Resultado corregido: ${rpm} → ${correctedRpm} rpm`}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Registro de calibración creado para mejora progresiva
                 </p>
               </div>
 
-              {/* Offline queue notice */}
               {savedOffline && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
                   <p className="text-sm text-amber-700 dark:text-amber-400">
                     <strong>Sin conexión:</strong> La medición se guardó
-                    localmente y se sincronizará automáticamente cuando
-                    recuperes la conexión a internet.
-                  </p>
-                  {pendingCount > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
-                      {pendingCount}{" "}
-                      {pendingCount === 1
-                        ? "medición pendiente"
-                        : "mediciones pendientes"}{" "}
-                      de sincronización.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Offline sync success notification */}
-              {offlineSyncedMsg && (
-                <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20 p-4">
-                  <p className="text-sm text-green-700 dark:text-green-400">
-                    {offlineSyncedMsg}
+                    localmente y se sincronizará automáticamente.
                   </p>
                 </div>
               )}
 
-              <p className="text-xs text-center text-gray-500 dark:text-gray-400">
-                {savedOffline
-                  ? "La medición se sincronizará automáticamente al recuperar conexión."
-                  : "La medición ha sido guardada automáticamente en el historial."}
-              </p>
-            </>
-          ) : (
-            <>
-              {/* Analysis failed to count breaths */}
+              {/* Action buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={resetAll}
+                  className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Grabar otro video
+                </button>
+                <Link
+                  href={`/perros/${dogId}`}
+                  className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                >
+                  Volver al perfil
+                </Link>
+              </div>
+
               <div className="text-center">
-                <div className="text-6xl mb-4">⚠️</div>
-                <h2 className="text-xl font-bold">
-                  No se pudieron contar las respiraciones
-                </h2>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  {result.message ||
-                    "El video no permitió un análisis confiable."}
-                </p>
+                <Link
+                  href={`/perros/${dogId}/calibracion`}
+                  className="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  Ver historial de calibración →
+                </Link>
               </div>
-
-              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
-                <p className="text-sm text-amber-700 dark:text-amber-400">
-                  <strong>Sugerencias:</strong>
-                </p>
-                <ul className="mt-2 text-sm text-amber-700 dark:text-amber-400 list-disc list-inside space-y-1">
-                  <li>Asegúrate de que el pecho del perro sea visible</li>
-                  <li>Graba con buena iluminación</li>
-                  <li>Mantén la cámara estable</li>
-                  <li>El perro debe estar en reposo</li>
-                  {usedMethod === "on-device" && (
-                    <li>
-                      Intenta seleccionar con más precisión la zona del tórax
-                    </li>
-                  )}
-                </ul>
-              </div>
-            </>
+            </div>
           )}
 
-          {/* Action buttons */}
+          {/* Scientific reference */}
+          {!saved && (
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                <strong>Referencia científica:</strong> El análisis por video
+                se basa en tecnología con un RMSE de 1.1 rpm y correlación de
+                0.92 respecto a monitores aprobados por la FDA. El objetivo de
+                precisión es un error {"<"}3 rpm vs medición manual.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // --- Failed result screen (no breaths detected) ---
+  if (result && !result.success) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-8">
+        <div className="space-y-6">
+          <div className="text-center">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h2 className="text-xl font-bold">
+              No se pudieron contar las respiraciones
+            </h2>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              {result.message ||
+                "El video no permitió un análisis confiable."}
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              <strong>Sugerencias:</strong>
+            </p>
+            <ul className="mt-2 text-sm text-amber-700 dark:text-amber-400 list-disc list-inside space-y-1">
+              <li>Asegúrate de que el pecho del perro sea visible</li>
+              <li>Graba con buena iluminación</li>
+              <li>Mantén la cámara estable</li>
+              <li>El perro debe estar en reposo</li>
+              {usedMethod === "on-device" && (
+                <li>
+                  Intenta seleccionar con más precisión la zona del tórax
+                </li>
+              )}
+            </ul>
+          </div>
+
           <div className="flex gap-3">
             <button
               onClick={resetAll}
