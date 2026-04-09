@@ -60,6 +60,8 @@ export const respiratoryMeasurements = sqliteTable("respiratory_measurements", {
   breathCount: integer("breath_count").notNull(), // total taps counted
   durationSeconds: integer("duration_seconds").notNull(), // 30 or 60
   breathsPerMinute: integer("breaths_per_minute").notNull(), // calculated rate
+  method: text("method").notNull().default("manual"), // 'manual' | 'ai'
+  aiConfidence: text("ai_confidence"), // 'alta' | 'media' | 'baja' (only for AI)
   notes: text("notes"), // optional observation notes
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

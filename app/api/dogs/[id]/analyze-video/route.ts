@@ -4,6 +4,8 @@ import { getDogAccess } from "@/lib/db/dog-access";
 import { getDb } from "@/lib/db";
 import { respiratoryMeasurements } from "@/lib/db/schema";
 import { analyzeRespiratoryVideo } from "@/lib/gemini";
+import { validateAnalysis } from "@/lib/analysis-validation";
+import { eq, and, desc } from "drizzle-orm";
 import crypto from "crypto";
 
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
@@ -74,14 +76,70 @@ export async function POST(
       });
     }
 
-    // Save measurement to database
     const db = getDb();
-    const measurementId = crypto.randomUUID();
 
-    // Use the video duration for the measurement, normalized to 60s for RPM
+    // Fetch recent measurements for this dog to validate AI result
+    const recentMeasurements = await db
+      .select({
+        breathsPerMinute: respiratoryMeasurements.breathsPerMinute,
+        method: respiratoryMeasurements.method,
+        aiConfidence: respiratoryMeasurements.aiConfidence,
+        createdAt: respiratoryMeasurements.createdAt,
+      })
+      .from(respiratoryMeasurements)
+      .where(eq(respiratoryMeasurements.dogId, dogId))
+      .orderBy(desc(respiratoryMeasurements.createdAt))
+      .limit(50);
+
+    // Separate manual measurements for comparison
+    const recentManualMeasurements = recentMeasurements
+      .filter((m) => m.method === "manual")
+      .map((m) => ({
+        breathsPerMinute: m.breathsPerMinute,
+        createdAt: m.createdAt,
+      }));
+
+    // Calculate historical AI errors (AI measurements that have a close-in-time manual measurement)
+    const historicalAiErrors: number[] = [];
+    const aiMeasurements = recentMeasurements.filter((m) => m.method === "ai");
+    const manualMeasurements = recentMeasurements.filter((m) => m.method === "manual");
+
+    for (const aiM of aiMeasurements) {
+      // Find closest manual measurement within 24h
+      const aiTime = aiM.createdAt.getTime();
+      let closestManual: (typeof manualMeasurements)[0] | null = null;
+      let closestDiff = Infinity;
+
+      for (const manM of manualMeasurements) {
+        const diff = Math.abs(manM.createdAt.getTime() - aiTime);
+        if (diff < 24 * 60 * 60 * 1000 && diff < closestDiff) {
+          closestDiff = diff;
+          closestManual = manM;
+        }
+      }
+
+      if (closestManual) {
+        historicalAiErrors.push(
+          Math.abs(aiM.breathsPerMinute - closestManual.breathsPerMinute)
+        );
+      }
+    }
+
+    // Use our calculated RPM for consistency
     const breathsPerMinute = Math.round(
       (analysis.breathCount / analysis.durationSeconds) * 60
     );
+
+    // Run validation
+    const validation = validateAnalysis({
+      aiRpm: breathsPerMinute,
+      aiConfidence: analysis.confidence,
+      recentManualMeasurements,
+      historicalAiErrors,
+    });
+
+    // Save measurement to database
+    const measurementId = crypto.randomUUID();
 
     const noteParts: string[] = [];
     noteParts.push(`Análisis automático por IA (confianza: ${analysis.confidence})`);
@@ -96,6 +154,8 @@ export async function POST(
       breathCount: analysis.breathCount,
       durationSeconds: analysis.durationSeconds,
       breathsPerMinute,
+      method: "ai",
+      aiConfidence: analysis.confidence,
       notes: noteParts.join(". "),
     });
 
@@ -106,6 +166,7 @@ export async function POST(
         breathsPerMinute, // Use our calculated value for consistency
       },
       measurementId,
+      validation,
     });
   } catch (err) {
     const message =
