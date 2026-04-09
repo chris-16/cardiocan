@@ -7,6 +7,17 @@ import PushNotificationToggle from "@/app/perros/components/push-notification-to
 
 type MedicationWithSchedules = Medication & { schedules: MedicationSchedule[] };
 
+interface MedicationLogEntry {
+  id: string;
+  medicationId: string;
+  userId: string;
+  userName: string;
+  scheduledTime: string;
+  administeredAt: string;
+  status: string;
+  notes: string | null;
+}
+
 const DAYS_LABELS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 function formatTime(time: string): string {
@@ -15,6 +26,30 @@ function formatTime(time: string): string {
   const ampm = hour >= 12 ? "PM" : "AM";
   const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
   return `${displayHour}:${m} ${ampm}`;
+}
+
+function formatDateTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const day = date.getDate();
+  const month = date.toLocaleDateString("es-CL", { month: "short" });
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${day} ${month}, ${hours}:${minutes}`;
+}
+
+function formatRelativeDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "Justo ahora";
+  if (diffMins < 60) return `Hace ${diffMins} min`;
+  if (diffHours < 24) return `Hace ${diffHours}h`;
+  if (diffDays < 7) return `Hace ${diffDays}d`;
+  return formatDateTime(dateStr);
 }
 
 export default function MedicamentosPage({
@@ -42,6 +77,12 @@ export default function MedicamentosPage({
 
   // Log state
   const [loggingId, setLoggingId] = useState<string | null>(null);
+  const [loggedId, setLoggedId] = useState<string | null>(null);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [logsMap, setLogsMap] = useState<
+    Record<string, MedicationLogEntry[]>
+  >({});
+  const [loadingLogs, setLoadingLogs] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -69,6 +110,33 @@ export default function MedicamentosPage({
       setError("Error de conexión");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchLogs(medicationId: string) {
+    setLoadingLogs(medicationId);
+    try {
+      const res = await fetch(
+        `/api/dogs/${dogId}/medications/${medicationId}/logs`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setLogsMap((prev) => ({ ...prev, [medicationId]: data.logs }));
+      }
+    } catch {
+      setError("Error al cargar historial");
+    } finally {
+      setLoadingLogs(null);
+    }
+  }
+
+  function toggleLogs(medicationId: string) {
+    if (expandedLogId === medicationId) {
+      setExpandedLogId(null);
+    } else {
+      setExpandedLogId(medicationId);
+      // Fetch logs if not cached or to refresh
+      fetchLogs(medicationId);
     }
   }
 
@@ -179,6 +247,14 @@ export default function MedicamentosPage({
       });
 
       if (res.ok) {
+        // Show success feedback
+        setLoggedId(medId);
+        setTimeout(() => setLoggedId(null), 2000);
+
+        // Refresh logs if they're currently visible
+        if (expandedLogId === medId) {
+          await fetchLogs(medId);
+        }
         await fetchData();
       }
     } catch {
@@ -306,13 +382,32 @@ export default function MedicamentosPage({
               </div>
 
               {/* Actions */}
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   onClick={() => handleLogAdministration(med.id)}
-                  disabled={loggingId === med.id}
-                  className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                  disabled={loggingId === med.id || loggedId === med.id}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors disabled:opacity-80 ${
+                    loggedId === med.id
+                      ? "bg-green-500"
+                      : "bg-green-600 hover:bg-green-700"
+                  }`}
                 >
-                  {loggingId === med.id ? "Registrando..." : "✅ Administrado"}
+                  {loggingId === med.id
+                    ? "Registrando..."
+                    : loggedId === med.id
+                      ? "Registrado"
+                      : "Administrado"}
+                </button>
+
+                <button
+                  onClick={() => toggleLogs(med.id)}
+                  className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    expandedLogId === med.id
+                      ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                      : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  Historial
                 </button>
 
                 {role === "owner" && (
@@ -338,6 +433,70 @@ export default function MedicamentosPage({
                   </>
                 )}
               </div>
+
+              {/* Administration Log History */}
+              {expandedLogId === med.id && (
+                <div className="mt-4 border-t border-gray-100 pt-4 dark:border-gray-700">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                    Historial de administración
+                  </h4>
+
+                  {loadingLogs === med.id ? (
+                    <p className="text-xs text-gray-400">Cargando historial...</p>
+                  ) : !logsMap[med.id]?.length ? (
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      Sin registros aún
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {logsMap[med.id].map((log) => (
+                        <div
+                          key={log.id}
+                          className="flex items-start gap-3 rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-800/50"
+                        >
+                          <div
+                            className={`mt-0.5 h-2 w-2 flex-shrink-0 rounded-full ${
+                              log.status === "administered"
+                                ? "bg-green-500"
+                                : "bg-yellow-500"
+                            }`}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">
+                                {log.userName}
+                              </span>
+                              <span
+                                className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0"
+                                title={formatDateTime(log.administeredAt)}
+                              >
+                                {formatRelativeDate(log.administeredAt)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {log.status === "administered"
+                                  ? "Administrado"
+                                  : "Omitido"}
+                              </span>
+                              {log.scheduledTime !== "manual" && (
+                                <span className="text-xs text-gray-400 dark:text-gray-500">
+                                  (programado: {formatTime(log.scheduledTime)})
+                                </span>
+                              )}
+                            </div>
+                            {log.notes && (
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                {log.notes}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
