@@ -58,6 +58,7 @@ export const respiratoryMeasurements = sqliteTable("respiratory_measurements", {
   breathCount: integer("breath_count").notNull(), // total taps counted
   durationSeconds: integer("duration_seconds").notNull(), // 30 or 60
   breathsPerMinute: integer("breaths_per_minute").notNull(), // calculated rate
+  notes: text("notes"), // optional observation notes
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

@@ -1,0 +1,1 @@
+ALTER TABLE `respiratory_measurements` ADD `notes` text;

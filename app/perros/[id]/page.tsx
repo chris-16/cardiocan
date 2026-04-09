@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
 import PhotoUpload from "@/app/perros/components/photo-upload";
 import RpmAlert, { getRpmAlertLevel } from "@/app/perros/components/rpm-alert";
+import MeasurementNotes from "@/app/perros/components/measurement-notes";
 
 function formatWeight(weightGrams: number | null): string {
   if (!weightGrams) return "—";
@@ -224,39 +225,55 @@ export default function DogDetailPage({
                       ? "text-orange-600 dark:text-orange-400"
                       : "text-green-600 dark:text-green-400";
                 return (
-                  <div key={m.id} className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {date.toLocaleDateString("es-CL", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}{" "}
-                        {date.toLocaleTimeString("es-CL", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500">
-                        {m.breathCount} resp en {m.durationSeconds}s
-                      </p>
+                  <div key={m.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {date.toLocaleDateString("es-CL", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}{" "}
+                          {date.toLocaleTimeString("es-CL", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          {m.breathCount} resp en {m.durationSeconds}s
+                        </p>
+                      </div>
+                      <div className="text-right flex items-center gap-1.5">
+                        {alertLevel === "urgent" && (
+                          <span className="text-xs" aria-label="Alerta urgente">🚨</span>
+                        )}
+                        {alertLevel === "elevated" && (
+                          <span className="text-xs" aria-label="Frecuencia elevada">⚠️</span>
+                        )}
+                        <span
+                          className={`text-lg font-bold tabular-nums ${rpmColorClass}`}
+                        >
+                          {m.breathsPerMinute}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          rpm
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right flex items-center gap-1.5">
-                      {alertLevel === "urgent" && (
-                        <span className="text-xs" aria-label="Alerta urgente">🚨</span>
-                      )}
-                      {alertLevel === "elevated" && (
-                        <span className="text-xs" aria-label="Frecuencia elevada">⚠️</span>
-                      )}
-                      <span
-                        className={`text-lg font-bold tabular-nums ${rpmColorClass}`}
-                      >
-                        {m.breathsPerMinute}
-                      </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        rpm
-                      </span>
-                    </div>
+                    <MeasurementNotes
+                      dogId={id}
+                      measurementId={m.id}
+                      initialNotes={m.notes ?? null}
+                      onNotesUpdated={(newNotes) => {
+                        setMeasurements((prev) =>
+                          prev.map((measurement) =>
+                            measurement.id === m.id
+                              ? { ...measurement, notes: newNotes }
+                              : measurement
+                          )
+                        );
+                      }}
+                    />
                   </div>
                 );
               })}

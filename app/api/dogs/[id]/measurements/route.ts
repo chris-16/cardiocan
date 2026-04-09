@@ -8,6 +8,7 @@ import crypto from "crypto";
 interface CreateMeasurementBody {
   breathCount: number;
   durationSeconds: number;
+  notes?: string;
 }
 
 export async function GET(
@@ -80,7 +81,7 @@ export async function POST(
     }
 
     const body = (await request.json()) as CreateMeasurementBody;
-    const { breathCount, durationSeconds } = body;
+    const { breathCount, durationSeconds, notes } = body;
 
     if (typeof breathCount !== "number" || breathCount < 0) {
       return NextResponse.json(
@@ -102,6 +103,8 @@ export async function POST(
 
     const id = crypto.randomUUID();
 
+    const trimmedNotes = notes?.trim() || null;
+
     await db.insert(respiratoryMeasurements).values({
       id,
       dogId,
@@ -109,6 +112,7 @@ export async function POST(
       breathCount,
       durationSeconds,
       breathsPerMinute,
+      notes: trimmedNotes,
     });
 
     const [measurement] = await db

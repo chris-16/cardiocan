@@ -18,6 +18,7 @@ interface ChartDataPoint {
   rpm: number;
   breathCount: number;
   durationSeconds: number;
+  notes: string | null;
 }
 
 interface MeasurementChartProps {
@@ -65,6 +66,11 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
       <p className="text-xs text-gray-400 dark:text-gray-500">
         {data.breathCount} resp en {data.durationSeconds}s
       </p>
+      {data.notes && (
+        <p className="mt-1 text-xs text-gray-600 dark:text-gray-300 italic max-w-48">
+          {data.notes}
+        </p>
+      )}
     </div>
   );
 }
@@ -97,6 +103,7 @@ export default function MeasurementChart({ measurements }: MeasurementChartProps
       rpm: m.breathsPerMinute,
       breathCount: m.breathCount,
       durationSeconds: m.durationSeconds,
+      notes: m.notes ?? null,
     };
   });
 

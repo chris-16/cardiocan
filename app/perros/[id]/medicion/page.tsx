@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, use } from "react";
 import Link from "next/link";
 import RpmAlert, { getRpmAlertLevel } from "@/app/perros/components/rpm-alert";
 
-type MeasurementState = "setup" | "measuring" | "saving" | "done";
+type MeasurementState = "setup" | "measuring" | "review" | "saving" | "done";
 
 interface MeasurementResult {
   breathCount: number;
@@ -25,6 +25,7 @@ export default function MedicionPage({
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [result, setResult] = useState<MeasurementResult | null>(null);
   const [error, setError] = useState("");
+  const [notes, setNotes] = useState("");
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -36,7 +37,7 @@ export default function MedicionPage({
   }, [breathCount]);
 
   const finishMeasurement = useCallback(
-    async (count: number, durationSec: number) => {
+    async (count: number, durationSec: number, measurementNotes?: string) => {
       setState("saving");
       const breathsPerMinute = Math.round((count / durationSec) * 60);
 
@@ -47,6 +48,7 @@ export default function MedicionPage({
           body: JSON.stringify({
             breathCount: count,
             durationSeconds: durationSec,
+            notes: measurementNotes || undefined,
           }),
         });
 
@@ -83,12 +85,18 @@ export default function MedicionPage({
         if (timerRef.current) clearInterval(timerRef.current);
         timerRef.current = null;
         setTimeRemaining(0);
-        finishMeasurement(breathCountRef.current, duration);
+        // Go to review screen so user can add notes before saving
+        setResult({
+          breathCount: breathCountRef.current,
+          durationSeconds: duration,
+          breathsPerMinute: Math.round((breathCountRef.current / duration) * 60),
+        });
+        setState("review");
       } else {
         setTimeRemaining(remaining);
       }
     }, 250);
-  }, [duration, finishMeasurement]);
+  }, [duration]);
 
   const handleTap = useCallback(() => {
     if (state !== "measuring") return;
@@ -109,7 +117,8 @@ export default function MedicionPage({
         ? 100
         : 0;
 
-  if (state === "done" && result) {
+  // Shared result display for review and done states
+  if ((state === "review" || state === "done") && result) {
     const alertLevel = getRpmAlertLevel(result.breathsPerMinute);
     const resultIcon =
       alertLevel === "urgent" ? "🚨" : alertLevel === "elevated" ? "⚠️" : "✅";
@@ -156,24 +165,74 @@ export default function MedicionPage({
 
           <RpmAlert rpm={result.breathsPerMinute} />
 
-          <div className="flex gap-3">
+          {/* Notes input - shown during review before saving */}
+          {state === "review" && (
+            <div className="text-left">
+              <label
+                htmlFor="measurement-notes"
+                className="block text-sm font-medium mb-1"
+              >
+                Notas (opcional)
+              </label>
+              <textarea
+                id="measurement-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Estado del perro, síntomas observados..."
+                rows={3}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+              />
+            </div>
+          )}
+
+          {/* Saved notes display - shown in done state */}
+          {state === "done" && notes.trim() && (
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 text-left">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                Nota
+              </p>
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                {notes.trim()}
+              </p>
+            </div>
+          )}
+
+          {state === "review" && (
             <button
-              onClick={() => {
-                setState("setup");
-                setResult(null);
-                setBreathCount(0);
-              }}
-              className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              onClick={() =>
+                finishMeasurement(
+                  result.breathCount,
+                  result.durationSeconds,
+                  notes.trim() || undefined
+                )
+              }
+              className="w-full rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700"
             >
-              Nueva medición
+              Guardar medición
             </button>
-            <Link
-              href={`/perros/${dogId}`}
-              className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              Volver al perfil
-            </Link>
-          </div>
+          )}
+
+          {state === "done" && (
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setState("setup");
+                  setResult(null);
+                  setBreathCount(0);
+                  setNotes("");
+                }}
+                className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Nueva medición
+              </button>
+              <Link
+                href={`/perros/${dogId}`}
+                className="flex-1 rounded-md border border-gray-300 px-4 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Volver al perfil
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     );
