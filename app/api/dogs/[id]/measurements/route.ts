@@ -46,6 +46,7 @@ export async function GET(
         method: respiratoryMeasurements.method,
         aiConfidence: respiratoryMeasurements.aiConfidence,
         notes: respiratoryMeasurements.notes,
+        videoKey: respiratoryMeasurements.videoKey,
         createdAt: respiratoryMeasurements.createdAt,
         userName: users.name,
       })
@@ -64,6 +65,7 @@ export async function GET(
       method: row.method,
       aiConfidence: row.aiConfidence,
       notes: row.notes,
+      videoKey: row.videoKey,
       createdAt: row.createdAt,
       userName: row.userName ?? "Usuario desconocido",
     }));

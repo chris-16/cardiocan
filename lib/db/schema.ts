@@ -63,6 +63,7 @@ export const respiratoryMeasurements = sqliteTable("respiratory_measurements", {
   method: text("method").notNull().default("manual"), // 'manual' | 'ai'
   aiConfidence: text("ai_confidence"), // 'alta' | 'media' | 'baja' (only for AI)
   notes: text("notes"), // optional observation notes
+  videoKey: text("video_key"), // R2 object key for the analysis video evidence
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

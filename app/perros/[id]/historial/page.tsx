@@ -6,7 +6,10 @@ import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
 import MeasurementChart from "@/app/perros/components/measurement-chart";
 import { DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 
-type MeasurementWithUser = RespiratoryMeasurement & { userName: string };
+type MeasurementWithUser = RespiratoryMeasurement & {
+  userName: string;
+  videoKey: string | null;
+};
 
 type TimeRange = "7d" | "14d" | "30d" | "all";
 
@@ -45,6 +48,9 @@ export default function HistorialPage({
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoMeasurementId, setVideoMeasurementId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -89,6 +95,30 @@ export default function HistorialPage({
     }, 30_000);
     return () => clearInterval(interval);
   }, [id]);
+
+  async function handlePlayVideo(measurementId: string) {
+    setVideoLoading(true);
+    setVideoMeasurementId(measurementId);
+    try {
+      const res = await fetch(`/api/dogs/${id}/measurements/${measurementId}/video`);
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Error al cargar el video");
+      }
+      const data = await res.json();
+      setVideoUrl(data.url);
+    } catch {
+      setVideoUrl(null);
+      setVideoMeasurementId(null);
+    } finally {
+      setVideoLoading(false);
+    }
+  }
+
+  function closeVideoModal() {
+    setVideoUrl(null);
+    setVideoMeasurementId(null);
+  }
 
   if (loading) {
     return (
@@ -224,6 +254,36 @@ export default function HistorialPage({
         return null;
       })()}
 
+      {/* Video playback modal */}
+      {videoUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-900 overflow-hidden shadow-xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Video del análisis
+              </h3>
+              <button
+                onClick={closeVideoModal}
+                className="rounded-md p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            </div>
+            <div className="bg-black">
+              <video
+                src={videoUrl}
+                controls
+                autoPlay
+                playsInline
+                className="w-full aspect-video"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Measurement list with user attribution */}
       {filteredMeasurements.length > 0 && (
         <div className="mt-6">
@@ -250,11 +310,34 @@ export default function HistorialPage({
                     </p>
                     <p className="text-xs text-gray-400 dark:text-gray-500">
                       por {m.userName}
+                      {m.method === "ai" && (
+                        <span className="ml-1.5 inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                          AI
+                        </span>
+                      )}
                     </p>
                   </div>
-                  <span className="text-sm font-bold tabular-nums">
-                    {m.breathsPerMinute} <span className="text-xs font-normal text-gray-500">rpm</span>
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {m.videoKey && (
+                      <button
+                        onClick={() => handlePlayVideo(m.id)}
+                        disabled={videoLoading && videoMeasurementId === m.id}
+                        className="rounded-md p-1.5 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50"
+                        title="Ver video del análisis"
+                      >
+                        {videoLoading && videoMeasurementId === m.id ? (
+                          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
+                    <span className="text-sm font-bold tabular-nums">
+                      {m.breathsPerMinute} <span className="text-xs font-normal text-gray-500">rpm</span>
+                    </span>
+                  </div>
                 </div>
               );
             })}

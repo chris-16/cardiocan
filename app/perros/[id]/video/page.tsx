@@ -67,6 +67,9 @@ export default function VideoPage({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedOffline, setSavedOffline] = useState(false);
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [videoUploaded, setVideoUploaded] = useState(false);
+  const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
 
   const videoBlobRef = useRef<Blob | null>(null);
 
@@ -244,8 +247,14 @@ export default function VideoPage({
         throw new Error(data.error || "Error al guardar la calibración");
       }
 
+      const calibrationData = await res.json();
       setCalibrationAction(action);
       setSaved(true);
+
+      // Upload the video to R2 in the background (non-blocking)
+      if (videoBlobRef.current && calibrationData.measurementId) {
+        uploadVideoToR2(calibrationData.measurementId);
+      }
     } catch (err) {
       if (!navigator.onLine && usedMethod === "on-device") {
         // Offline fallback for on-device measurements
@@ -264,6 +273,37 @@ export default function VideoPage({
     }
   }
 
+  async function uploadVideoToR2(measurementId: string) {
+    if (!videoBlobRef.current) return;
+
+    setVideoUploading(true);
+    setVideoUploadError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("video", videoBlobRef.current, "respiracion.webm");
+      formData.append("measurementId", measurementId);
+
+      const res = await fetch(`/api/dogs/${dogId}/video-upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Error al subir el video");
+      }
+
+      setVideoUploaded(true);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Error al subir el video";
+      setVideoUploadError(message);
+    } finally {
+      setVideoUploading(false);
+    }
+  }
+
   function resetAll() {
     setResult(null);
     setVideoBlob(null);
@@ -276,6 +316,9 @@ export default function VideoPage({
     setSaving(false);
     setSaved(false);
     setSavedOffline(false);
+    setVideoUploading(false);
+    setVideoUploaded(false);
+    setVideoUploadError(null);
     setPageState("instructions");
   }
 
@@ -560,6 +603,30 @@ export default function VideoPage({
                   <p className="text-sm text-amber-700 dark:text-amber-400">
                     <strong>Sin conexión:</strong> La medición se guardó
                     localmente y se sincronizará automáticamente.
+                  </p>
+                </div>
+              )}
+
+              {/* Video upload status */}
+              {videoUploading && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20 p-4 flex items-center gap-3">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent shrink-0" />
+                  <p className="text-sm text-blue-700 dark:text-blue-400">
+                    Almacenando video como evidencia...
+                  </p>
+                </div>
+              )}
+              {videoUploaded && (
+                <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20 p-4">
+                  <p className="text-sm text-green-700 dark:text-green-400">
+                    📹 Video almacenado como evidencia del análisis
+                  </p>
+                </div>
+              )}
+              {videoUploadError && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    No se pudo almacenar el video: {videoUploadError}
                   </p>
                 </div>
               )}
