@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
 import PhotoUpload from "@/app/perros/components/photo-upload";
+import RpmAlert, { getRpmAlertLevel } from "@/app/perros/components/rpm-alert";
 
 function formatWeight(weightGrams: number | null): string {
   if (!weightGrams) return "—";
@@ -183,6 +184,11 @@ export default function DogDetailPage({
           </span>
         </Link>
 
+        {/* Latest measurement alert */}
+        {measurements.length > 0 && (
+          <RpmAlert rpm={measurements[0].breathsPerMinute} />
+        )}
+
         {/* Measurement history */}
         {measurements.length > 0 && (
           <div>
@@ -194,7 +200,13 @@ export default function DogDetailPage({
                     ? m.createdAt * 1000
                     : m.createdAt
                 );
-                const isElevated = m.breathsPerMinute > 30;
+                const alertLevel = getRpmAlertLevel(m.breathsPerMinute);
+                const rpmColorClass =
+                  alertLevel === "urgent"
+                    ? "text-red-600 dark:text-red-400"
+                    : alertLevel === "elevated"
+                      ? "text-orange-600 dark:text-orange-400"
+                      : "text-green-600 dark:text-green-400";
                 return (
                   <div key={m.id} className="flex items-center justify-between px-4 py-3">
                     <div>
@@ -213,17 +225,19 @@ export default function DogDetailPage({
                         {m.breathCount} resp en {m.durationSeconds}s
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right flex items-center gap-1.5">
+                      {alertLevel === "urgent" && (
+                        <span className="text-xs" aria-label="Alerta urgente">🚨</span>
+                      )}
+                      {alertLevel === "elevated" && (
+                        <span className="text-xs" aria-label="Frecuencia elevada">⚠️</span>
+                      )}
                       <span
-                        className={`text-lg font-bold tabular-nums ${
-                          isElevated
-                            ? "text-orange-600 dark:text-orange-400"
-                            : "text-green-600 dark:text-green-400"
-                        }`}
+                        className={`text-lg font-bold tabular-nums ${rpmColorClass}`}
                       >
                         {m.breathsPerMinute}
                       </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
                         rpm
                       </span>
                     </div>

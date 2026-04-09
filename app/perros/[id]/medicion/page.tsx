@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, use } from "react";
 import Link from "next/link";
+import RpmAlert, { getRpmAlertLevel } from "@/app/perros/components/rpm-alert";
 
 type MeasurementState = "setup" | "measuring" | "saving" | "done";
 
@@ -109,18 +110,26 @@ export default function MedicionPage({
         : 0;
 
   if (state === "done" && result) {
+    const alertLevel = getRpmAlertLevel(result.breathsPerMinute);
+    const resultIcon =
+      alertLevel === "urgent" ? "🚨" : alertLevel === "elevated" ? "⚠️" : "✅";
+    const rpmColorClass =
+      alertLevel === "urgent"
+        ? "text-red-600 dark:text-red-400"
+        : alertLevel === "elevated"
+          ? "text-orange-600 dark:text-orange-400"
+          : "text-green-600 dark:text-green-400";
+
     return (
       <div className="mx-auto max-w-lg px-4 py-8">
         <div className="space-y-6 text-center">
-          <div className="text-6xl">
-            {result.breathsPerMinute <= 30 ? "✅" : "⚠️"}
-          </div>
+          <div className="text-6xl">{resultIcon}</div>
 
           <div>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Frecuencia respiratoria
             </p>
-            <p className="text-5xl font-bold mt-1">
+            <p className={`text-5xl font-bold mt-1 ${rpmColorClass}`}>
               {result.breathsPerMinute}
             </p>
             <p className="text-lg text-gray-600 dark:text-gray-300">
@@ -145,12 +154,7 @@ export default function MedicionPage({
             </div>
           </div>
 
-          {result.breathsPerMinute > 30 && (
-            <div className="rounded-md bg-orange-50 p-3 text-sm text-orange-700 dark:bg-orange-900/20 dark:text-orange-400">
-              La frecuencia respiratoria es elevada. Considera consultar con tu
-              veterinario si persiste.
-            </div>
-          )}
+          <RpmAlert rpm={result.breathsPerMinute} />
 
           <div className="flex gap-3">
             <button
