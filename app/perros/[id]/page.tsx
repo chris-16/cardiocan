@@ -162,6 +162,17 @@ export default function DogDetailPage({
           </div>
         </div>
 
+        {/* Measurement CTA */}
+        <Link
+          href={`/perros/${dog.id}/medicion`}
+          className="block w-full rounded-lg bg-blue-600 px-4 py-4 text-center text-white hover:bg-blue-700 transition-colors"
+        >
+          <span className="text-lg font-semibold">Medir frecuencia respiratoria</span>
+          <span className="block text-sm opacity-80 mt-0.5">
+            Contador manual con timer
+          </span>
+        </Link>
+
         {/* Actions */}
         <div className="flex gap-3">
           <Link
