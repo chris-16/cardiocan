@@ -231,15 +231,29 @@ export default function DogDetailPage({
           <span className="text-gray-400">&rarr;</span>
         </Link>
 
-        {/* Medications link */}
+        {/* Active medications link */}
+        <Link
+          href={`/perros/${dog.id}/medicamentos/activos`}
+          className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50 transition-colors dark:border-gray-700 dark:hover:bg-gray-800"
+        >
+          <div>
+            <span className="text-sm font-semibold">💊 Medicamentos activos</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              Dosis pendientes, atrasadas e historial
+            </span>
+          </div>
+          <span className="text-gray-400">&rarr;</span>
+        </Link>
+
+        {/* Medications management link */}
         <Link
           href={`/perros/${dog.id}/medicamentos`}
           className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50 transition-colors dark:border-gray-700 dark:hover:bg-gray-800"
         >
           <div>
-            <span className="text-sm font-semibold">💊 Medicamentos</span>
+            <span className="text-sm font-semibold">⚙️ Gestionar medicamentos</span>
             <span className="block text-xs text-gray-500 dark:text-gray-400">
-              Gestionar medicación y recordatorios
+              Agregar, editar y configurar medicación
             </span>
           </div>
           <span className="text-gray-400">&rarr;</span>
