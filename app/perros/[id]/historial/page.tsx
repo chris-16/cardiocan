@@ -6,6 +6,8 @@ import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
 import MeasurementChart from "@/app/perros/components/measurement-chart";
 import { DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 
+type MeasurementWithUser = RespiratoryMeasurement & { userName: string };
+
 type TimeRange = "7d" | "14d" | "30d" | "all";
 
 const TIME_RANGE_LABELS: Record<TimeRange, string> = {
@@ -16,9 +18,9 @@ const TIME_RANGE_LABELS: Record<TimeRange, string> = {
 };
 
 function filterByTimeRange(
-  measurements: RespiratoryMeasurement[],
+  measurements: MeasurementWithUser[],
   range: TimeRange
-): RespiratoryMeasurement[] {
+): MeasurementWithUser[] {
   if (range === "all") return measurements;
 
   const days = range === "7d" ? 7 : range === "14d" ? 14 : 30;
@@ -39,7 +41,7 @@ export default function HistorialPage({
 }) {
   const { id } = use(params);
   const [dog, setDog] = useState<Dog | null>(null);
-  const [measurements, setMeasurements] = useState<RespiratoryMeasurement[]>([]);
+  const [measurements, setMeasurements] = useState<MeasurementWithUser[]>([]);
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -70,6 +72,22 @@ export default function HistorialPage({
       }
     }
     fetchData();
+  }, [id]);
+
+  // Auto-refresh measurements every 30 seconds for shared access
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/dogs/${id}/measurements`);
+        if (res.ok) {
+          const data = await res.json();
+          setMeasurements(data.measurements ?? []);
+        }
+      } catch {
+        // Silently ignore refresh errors
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
   }, [id]);
 
   if (loading) {
@@ -171,6 +189,75 @@ export default function HistorialPage({
               {Math.max(...filteredMeasurements.map((m) => m.breathsPerMinute))}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">Máximo rpm</p>
+          </div>
+        </div>
+      )}
+
+      {/* Contributors */}
+      {filteredMeasurements.length > 0 && (() => {
+        const contributors = filteredMeasurements.reduce<Record<string, number>>((acc, m) => {
+          const name = m.userName || "Desconocido";
+          acc[name] = (acc[name] || 0) + 1;
+          return acc;
+        }, {});
+        const contributorEntries = Object.entries(contributors).sort((a, b) => b[1] - a[1]);
+        if (contributorEntries.length > 1) {
+          return (
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">Mediciones por cuidador</h3>
+              <div className="flex flex-wrap gap-2">
+                {contributorEntries.map(([name, count]) => (
+                  <span
+                    key={name}
+                    className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    {name}
+                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+                      {count}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
+      {/* Measurement list with user attribution */}
+      {filteredMeasurements.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">Detalle de mediciones</h3>
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700 max-h-80 overflow-y-auto">
+            {filteredMeasurements.map((m) => {
+              const date = new Date(
+                typeof m.createdAt === "number"
+                  ? m.createdAt * 1000
+                  : m.createdAt
+              );
+              return (
+                <div key={m.id} className="flex items-center justify-between px-4 py-2.5">
+                  <div>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      {date.toLocaleDateString("es-CL", {
+                        day: "numeric",
+                        month: "short",
+                      })}{" "}
+                      {date.toLocaleTimeString("es-CL", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      por {m.userName}
+                    </p>
+                  </div>
+                  <span className="text-sm font-bold tabular-nums">
+                    {m.breathsPerMinute} <span className="text-xs font-normal text-gray-500">rpm</span>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

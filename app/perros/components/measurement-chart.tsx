@@ -20,10 +20,13 @@ interface ChartDataPoint {
   breathCount: number;
   durationSeconds: number;
   notes: string | null;
+  userName?: string;
 }
 
+type MeasurementWithOptionalUser = RespiratoryMeasurement & { userName?: string };
+
 interface MeasurementChartProps {
-  measurements: RespiratoryMeasurement[];
+  measurements: MeasurementWithOptionalUser[];
   rpmThreshold?: number;
 }
 
@@ -68,6 +71,11 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
       <p className="text-xs text-gray-400 dark:text-gray-500">
         {data.breathCount} resp en {data.durationSeconds}s
       </p>
+      {data.userName && (
+        <p className="text-xs text-gray-400 dark:text-gray-500">
+          por {data.userName}
+        </p>
+      )}
       {data.notes && (
         <p className="mt-1 text-xs text-gray-600 dark:text-gray-300 italic max-w-48">
           {data.notes}
@@ -106,6 +114,7 @@ export default function MeasurementChart({ measurements, rpmThreshold = DEFAULT_
       breathCount: m.breathCount,
       durationSeconds: m.durationSeconds,
       notes: m.notes ?? null,
+      userName: (m as MeasurementWithOptionalUser).userName,
     };
   });
 

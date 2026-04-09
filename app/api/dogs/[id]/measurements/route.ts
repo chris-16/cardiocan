@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { dogs, respiratoryMeasurements } from "@/lib/db/schema";
+import { dogs, respiratoryMeasurements, users } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { getDogAccess } from "@/lib/db/dog-access";
 import { eq, and, desc } from "drizzle-orm";
@@ -35,11 +35,34 @@ export async function GET(
     }
 
     const db = getDb();
-    const measurements = await db
-      .select()
+    const rows = await db
+      .select({
+        id: respiratoryMeasurements.id,
+        dogId: respiratoryMeasurements.dogId,
+        userId: respiratoryMeasurements.userId,
+        breathCount: respiratoryMeasurements.breathCount,
+        durationSeconds: respiratoryMeasurements.durationSeconds,
+        breathsPerMinute: respiratoryMeasurements.breathsPerMinute,
+        notes: respiratoryMeasurements.notes,
+        createdAt: respiratoryMeasurements.createdAt,
+        userName: users.name,
+      })
       .from(respiratoryMeasurements)
+      .leftJoin(users, eq(respiratoryMeasurements.userId, users.id))
       .where(eq(respiratoryMeasurements.dogId, dogId))
       .orderBy(desc(respiratoryMeasurements.createdAt));
+
+    const measurements = rows.map((row) => ({
+      id: row.id,
+      dogId: row.dogId,
+      userId: row.userId,
+      breathCount: row.breathCount,
+      durationSeconds: row.durationSeconds,
+      breathsPerMinute: row.breathsPerMinute,
+      notes: row.notes,
+      createdAt: row.createdAt,
+      userName: row.userName ?? "Usuario desconocido",
+    }));
 
     return NextResponse.json({ measurements });
   } catch {

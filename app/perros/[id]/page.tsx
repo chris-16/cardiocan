@@ -4,6 +4,8 @@ import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
+
+type MeasurementWithUser = RespiratoryMeasurement & { userName: string };
 import PhotoUpload from "@/app/perros/components/photo-upload";
 import RpmAlert, { getRpmAlertLevel, DEFAULT_RPM_THRESHOLD } from "@/app/perros/components/rpm-alert";
 import MeasurementNotes from "@/app/perros/components/measurement-notes";
@@ -36,7 +38,7 @@ export default function DogDetailPage({
   const { id } = use(params);
   const router = useRouter();
   const [dog, setDog] = useState<Dog | null>(null);
-  const [measurements, setMeasurements] = useState<RespiratoryMeasurement[]>([]);
+  const [measurements, setMeasurements] = useState<MeasurementWithUser[]>([]);
   const [role, setRole] = useState<"owner" | "caretaker">("owner");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -69,6 +71,22 @@ export default function DogDetailPage({
       }
     }
     fetchData();
+  }, [id]);
+
+  // Auto-refresh measurements every 30 seconds for shared access
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/dogs/${id}/measurements`);
+        if (res.ok) {
+          const data = await res.json();
+          setMeasurements(data.measurements ?? []);
+        }
+      } catch {
+        // Silently ignore refresh errors
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
   }, [id]);
 
   async function handleDelete() {
@@ -252,6 +270,11 @@ export default function DogDetailPage({
                         </p>
                         <p className="text-xs text-gray-400 dark:text-gray-500">
                           {m.breathCount} resp en {m.durationSeconds}s
+                          {m.userName && (
+                            <span className="ml-1.5 text-gray-400 dark:text-gray-500">
+                              · por {m.userName}
+                            </span>
+                          )}
                         </p>
                       </div>
                       <div className="text-right flex items-center gap-1.5">
