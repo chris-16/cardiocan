@@ -12,6 +12,7 @@ interface OnDeviceProgressProps {
  */
 export default function OnDeviceProgress({ progress }: OnDeviceProgressProps) {
   const phaseLabels: Record<AnalysisProgress["phase"], string> = {
+    loading: "Cargando MediaPipe",
     extracting: "Extrayendo cuadros",
     analyzing: "Analizando movimiento",
     counting: "Contando respiraciones",
@@ -57,9 +58,10 @@ export default function OnDeviceProgress({ progress }: OnDeviceProgressProps) {
       {/* Phase indicator dots */}
       <div className="flex justify-center gap-3">
         {(
-          ["extracting", "analyzing", "counting", "done"] as const
+          ["loading", "extracting", "analyzing", "counting", "done"] as const
         ).map((phase) => {
           const phaseOrder = [
+            "loading",
             "extracting",
             "analyzing",
             "counting",

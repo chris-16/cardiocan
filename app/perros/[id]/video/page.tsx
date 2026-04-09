@@ -349,9 +349,9 @@ export default function VideoPage({
                 <div className="rounded-lg border border-green-200 dark:border-green-800 p-4">
                   <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                     <strong>Análisis on-device:</strong> El video fue analizado
-                    localmente en tu dispositivo usando detección de movimiento
-                    por procesamiento de imagen. No se envió ningún dato a
-                    servidores externos.
+                    localmente en tu dispositivo usando MediaPipe Pose
+                    Landmarker para detección de movimiento torácico. No se
+                    envió ningún dato a servidores externos.
                   </p>
                 </div>
               )}

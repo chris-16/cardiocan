@@ -102,10 +102,11 @@ export default function AnalysisMethodSelector({
           </p>
         ) : (
           <p className="text-gray-600 dark:text-gray-400">
-            El análisis se realiza directamente en tu dispositivo usando
-            procesamiento de imagen. <strong>No requiere internet.</strong>{" "}
-            Necesitas seleccionar la zona del tórax del perro manualmente. Ideal
-            para videos con buena visibilidad del movimiento torácico.
+            El análisis se realiza directamente en tu dispositivo usando{" "}
+            <strong>MediaPipe Pose Landmarker</strong> para detectar el
+            movimiento del tórax. <strong>No requiere internet</strong> (una vez
+            cacheado el modelo). Necesitas seleccionar la zona del tórax del
+            perro manualmente.
           </p>
         )}
       </div>

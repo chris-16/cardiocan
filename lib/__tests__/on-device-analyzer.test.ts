@@ -1,154 +1,31 @@
 /**
- * Tests for the on-device respiratory analyzer signal processing functions.
- * Note: The full analyzeVideoOnDevice function requires browser APIs (canvas, video),
- * so we test the pure signal processing helpers here.
+ * Tests for the on-device respiratory analyzer.
+ *
+ * Tests cover:
+ * 1. Signal processing functions (bandpass filter, peak detection, signal quality)
+ * 2. Landmark signal interpolation (handles gaps from failed MediaPipe detections)
+ * 3. RPM calculation accuracy at various breathing rates
+ *
+ * The full analyzeVideoOnDevice function requires browser APIs (canvas, video,
+ * MediaPipe WASM), so we test the pure signal processing and interpolation
+ * helpers here. The exported functions from on-device-analyzer.ts are tested
+ * directly where possible.
  */
 import { describe, it, expect } from "vitest";
-
-// We test the internal helper functions by importing the module.
-// Since the main export requires browser APIs, we test the algorithm logic
-// by reimplementing the core signal processing steps for unit testing.
-
-// --- Reimplemented helpers for testability ---
-
-function bandpassFilter(
-  signal: number[],
-  sampleRate: number,
-  lowCutHz: number,
-  highCutHz: number
-): number[] {
-  if (signal.length === 0) return [];
-
-  const mean = signal.reduce((sum, v) => sum + v, 0) / signal.length;
-  let detrended = signal.map((v) => v - mean);
-
-  const smoothWindow = Math.max(1, Math.round(sampleRate / (highCutHz * 2)));
-  detrended = movingAverage(detrended, smoothWindow);
-
-  const alphaHP = computeAlpha(lowCutHz, sampleRate);
-  const highPassed = highPassFilter(detrended, alphaHP);
-
-  const alphaLP = computeAlpha(highCutHz, sampleRate);
-  const lowPassed = lowPassFilter(highPassed, alphaLP);
-
-  return lowPassed;
-}
-
-function computeAlpha(cutoffHz: number, sampleRate: number): number {
-  const dt = 1 / sampleRate;
-  const rc = 1 / (2 * Math.PI * cutoffHz);
-  return rc / (rc + dt);
-}
-
-function highPassFilter(signal: number[], alpha: number): number[] {
-  const result = new Array(signal.length);
-  result[0] = signal[0];
-  for (let i = 1; i < signal.length; i++) {
-    result[i] = alpha * (result[i - 1] + signal[i] - signal[i - 1]);
-  }
-  return result;
-}
-
-function lowPassFilter(signal: number[], alpha: number): number[] {
-  const result = new Array(signal.length);
-  result[0] = signal[0];
-  for (let i = 1; i < signal.length; i++) {
-    result[i] = alpha * result[i - 1] + (1 - alpha) * signal[i];
-  }
-  return result;
-}
-
-function movingAverage(signal: number[], windowSize: number): number[] {
-  if (windowSize <= 1) return [...signal];
-  const result = new Array(signal.length);
-  const halfWindow = Math.floor(windowSize / 2);
-
-  for (let i = 0; i < signal.length; i++) {
-    const start = Math.max(0, i - halfWindow);
-    const end = Math.min(signal.length - 1, i + halfWindow);
-    let sum = 0;
-    for (let j = start; j <= end; j++) {
-      sum += signal[j];
-    }
-    result[i] = sum / (end - start + 1);
-  }
-
-  return result;
-}
-
-function detectPeaks(signal: number[], sampleRate: number): number[] {
-  if (signal.length < 5) return [];
-
-  const minPeakDistance = Math.round(sampleRate * 0.8);
-
-  const absSignal = signal.map(Math.abs);
-  const absMean = absSignal.reduce((s, v) => s + v, 0) / absSignal.length;
-  const variance =
-    absSignal.reduce((s, v) => s + (v - absMean) ** 2, 0) / absSignal.length;
-  const stddev = Math.sqrt(variance);
-  const threshold = absMean * 0.2 + stddev * 0.3;
-
-  const peaks: number[] = [];
-
-  for (let i = 1; i < signal.length - 1; i++) {
-    if (
-      signal[i] > signal[i - 1] &&
-      signal[i] > signal[i + 1] &&
-      signal[i] > threshold
-    ) {
-      if (peaks.length === 0 || i - peaks[peaks.length - 1] >= minPeakDistance) {
-        peaks.push(i);
-      } else if (
-        peaks.length > 0 &&
-        signal[i] > signal[peaks[peaks.length - 1]]
-      ) {
-        peaks[peaks.length - 1] = i;
-      }
-    }
-  }
-
-  return peaks;
-}
-
-function computeSignalQuality(
-  signal: number[],
-  peaks: number[],
-  sampleRate: number
-): number {
-  if (peaks.length < 2) return 0;
-
-  const intervals: number[] = [];
-  for (let i = 1; i < peaks.length; i++) {
-    intervals.push((peaks[i] - peaks[i - 1]) / sampleRate);
-  }
-
-  const meanInterval =
-    intervals.reduce((s, v) => s + v, 0) / intervals.length;
-  const intervalVariance =
-    intervals.reduce((s, v) => s + (v - meanInterval) ** 2, 0) /
-    intervals.length;
-  const cv = Math.sqrt(intervalVariance) / meanInterval;
-
-  const regularityScore = Math.max(0, 1 - cv);
-
-  const peakAmplitudes = peaks.map((i) => Math.abs(signal[i]));
-  const meanPeakAmp =
-    peakAmplitudes.reduce((s, v) => s + v, 0) / peakAmplitudes.length;
-  const rms = Math.sqrt(
-    signal.reduce((s, v) => s + v * v, 0) / signal.length
-  );
-  const snr = rms > 0 ? meanPeakAmp / rms : 0;
-  const snrScore = Math.min(1, snr / 3);
-
-  const countScore = Math.min(1, peaks.length / 5);
-
-  return regularityScore * 0.4 + snrScore * 0.3 + countScore * 0.3;
-}
+import {
+  interpolateSignal,
+  bandpassFilter,
+  detectPeaks,
+  computeSignalQuality,
+} from "@/lib/on-device-analyzer";
 
 // --- Helper to generate synthetic breathing signal ---
 
 /**
  * Generate a synthetic signal simulating dog chest movement.
+ * This works for both landmark-based (Y-position oscillation) and
+ * pixel-intensity-based (brightness oscillation) signal sources.
+ *
  * @param rpm Respiratory rate in breaths per minute
  * @param durationSec Duration in seconds
  * @param sampleRate Samples per second (fps)
@@ -169,7 +46,40 @@ function generateBreathingSignal(
     // Sinusoidal breathing pattern with baseline
     const breath = Math.sin(2 * Math.PI * breathFreqHz * t);
     const noise = noiseLevel * (Math.random() * 2 - 1);
-    signal.push(128 + 10 * breath + noise); // Simulates pixel intensity around 128
+    signal.push(128 + 10 * breath + noise); // Simulates signal around baseline 128
+  }
+
+  return signal;
+}
+
+/**
+ * Generate a landmark-based signal with gaps (null values) to simulate
+ * frames where MediaPipe PoseLandmarker failed to detect landmarks.
+ *
+ * @param rpm Respiratory rate
+ * @param durationSec Duration
+ * @param sampleRate Sample rate
+ * @param dropRate Fraction of frames with no detection (0-1)
+ */
+function generateLandmarkSignal(
+  rpm: number,
+  durationSec: number,
+  sampleRate: number,
+  dropRate: number
+): (number | null)[] {
+  const totalSamples = Math.floor(durationSec * sampleRate);
+  const breathFreqHz = rpm / 60;
+  const signal: (number | null)[] = [];
+
+  for (let i = 0; i < totalSamples; i++) {
+    if (Math.random() < dropRate) {
+      signal.push(null);
+    } else {
+      const t = i / sampleRate;
+      // Simulates Y-coordinate oscillation of torso landmarks (normalized 0-1)
+      const breath = Math.sin(2 * Math.PI * breathFreqHz * t);
+      signal.push(0.5 + 0.02 * breath); // Small Y oscillation around 0.5
+    }
   }
 
   return signal;
@@ -216,7 +126,7 @@ describe("On-device analyzer signal processing", () => {
 
       // Expected breaths in 30 seconds at 20 rpm = 10
       const expectedBreaths = (rpm * durationSec) / 60;
-      // Allow ±2 breaths tolerance due to filter edge effects
+      // Allow +/-2 breaths tolerance due to filter edge effects
       expect(peaks.length).toBeGreaterThanOrEqual(expectedBreaths - 2);
       expect(peaks.length).toBeLessThanOrEqual(expectedBreaths + 2);
     });
@@ -248,7 +158,6 @@ describe("On-device analyzer signal processing", () => {
       const filtered = bandpassFilter(signal, sampleRate, 0.15, 1.1);
       const peaks = detectPeaks(filtered, sampleRate);
 
-      const expectedBreaths = (rpm * durationSec) / 60; // 20
       const detectedRpm = (peaks.length / durationSec) * 60;
 
       // Should be within 5 rpm of expected for noisy signal
@@ -326,5 +235,135 @@ describe("On-device analyzer signal processing", () => {
 
       expect(Math.abs(computedRpm - targetRpm)).toBeLessThanOrEqual(4);
     });
+  });
+});
+
+describe("MediaPipe landmark signal interpolation", () => {
+  describe("interpolateSignal", () => {
+    it("returns all values unchanged when no gaps", () => {
+      const signal: (number | null)[] = [1, 2, 3, 4, 5];
+      const result = interpolateSignal(signal);
+      expect(result).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it("linearly interpolates single gap", () => {
+      const signal: (number | null)[] = [1, null, 3];
+      const result = interpolateSignal(signal);
+      expect(result).toEqual([1, 2, 3]);
+    });
+
+    it("linearly interpolates multiple consecutive gaps", () => {
+      const signal: (number | null)[] = [0, null, null, null, 4];
+      const result = interpolateSignal(signal);
+      expect(result).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it("fills leading nulls with first valid value", () => {
+      const signal: (number | null)[] = [null, null, 5, 6, 7];
+      const result = interpolateSignal(signal);
+      expect(result).toEqual([5, 5, 5, 6, 7]);
+    });
+
+    it("fills trailing nulls with last valid value", () => {
+      const signal: (number | null)[] = [1, 2, 3, null, null];
+      const result = interpolateSignal(signal);
+      expect(result).toEqual([1, 2, 3, 3, 3]);
+    });
+
+    it("handles all-null signal", () => {
+      const signal: (number | null)[] = [null, null, null];
+      const result = interpolateSignal(signal);
+      expect(result).toEqual([0, 0, 0]);
+    });
+
+    it("handles single valid value", () => {
+      const signal: (number | null)[] = [null, 5, null];
+      const result = interpolateSignal(signal);
+      expect(result).toEqual([5, 5, 5]);
+    });
+
+    it("preserves signal shape through sparse landmark detections", () => {
+      // Simulate MediaPipe detecting landmarks on ~60% of frames
+      const durationSec = 30;
+      const sampleRate = 10;
+      const rpm = 20;
+
+      const landmarkSignal = generateLandmarkSignal(
+        rpm,
+        durationSec,
+        sampleRate,
+        0.4 // 40% drop rate
+      );
+
+      const interpolated = interpolateSignal(landmarkSignal);
+
+      // Should have no nulls
+      expect(interpolated.every((v) => v !== null)).toBe(true);
+
+      // Should be able to detect breathing after bandpass filter
+      const filtered = bandpassFilter(interpolated, sampleRate, 0.15, 1.1);
+      const peaks = detectPeaks(filtered, sampleRate);
+      const detectedRpm = (peaks.length / durationSec) * 60;
+
+      // Allow wider tolerance due to interpolation artifacts
+      expect(Math.abs(detectedRpm - rpm)).toBeLessThan(8);
+    });
+  });
+
+  describe("landmark-based RPM from interpolated signal", () => {
+    it("detects breathing at 20 rpm from landmark Y-coordinates", () => {
+      const durationSec = 60;
+      const sampleRate = 10;
+      const targetRpm = 20;
+
+      // Simulate clean landmark signal (all frames detected)
+      const signal = generateLandmarkSignal(
+        targetRpm,
+        durationSec,
+        sampleRate,
+        0 // no drops
+      );
+
+      const interpolated = interpolateSignal(signal);
+      const filtered = bandpassFilter(interpolated, sampleRate, 0.15, 1.1);
+      const peaks = detectPeaks(filtered, sampleRate);
+      const computedRpm = Math.round((peaks.length / durationSec) * 60);
+
+      expect(Math.abs(computedRpm - targetRpm)).toBeLessThanOrEqual(3);
+    });
+
+    it("detects breathing at 15 rpm with 30% landmark drop rate", () => {
+      const durationSec = 60;
+      const sampleRate = 10;
+      const targetRpm = 15;
+
+      const signal = generateLandmarkSignal(
+        targetRpm,
+        durationSec,
+        sampleRate,
+        0.3 // 30% drop rate
+      );
+
+      const interpolated = interpolateSignal(signal);
+      const filtered = bandpassFilter(interpolated, sampleRate, 0.15, 1.1);
+      const peaks = detectPeaks(filtered, sampleRate);
+      const computedRpm = Math.round((peaks.length / durationSec) * 60);
+
+      // Wider tolerance for sparse detections
+      expect(Math.abs(computedRpm - targetRpm)).toBeLessThanOrEqual(5);
+    });
+  });
+});
+
+describe("MediaPipe integration constants", () => {
+  it("exports are available from on-device-analyzer module", async () => {
+    const mod = await import("@/lib/on-device-analyzer");
+
+    // Verify key exports exist
+    expect(typeof mod.analyzeVideoOnDevice).toBe("function");
+    expect(typeof mod.interpolateSignal).toBe("function");
+    expect(typeof mod.bandpassFilter).toBe("function");
+    expect(typeof mod.detectPeaks).toBe("function");
+    expect(typeof mod.computeSignalQuality).toBe("function");
   });
 });
