@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { Dog } from "@/lib/db/schema";
+import type { Dog, RespiratoryMeasurement } from "@/lib/db/schema";
 import PhotoUpload from "@/app/perros/components/photo-upload";
 
 function formatWeight(weightGrams: number | null): string {
@@ -33,27 +33,37 @@ export default function DogDetailPage({
   const { id } = use(params);
   const router = useRouter();
   const [dog, setDog] = useState<Dog | null>(null);
+  const [measurements, setMeasurements] = useState<RespiratoryMeasurement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    async function fetchDog() {
+    async function fetchData() {
       try {
-        const res = await fetch(`/api/dogs/${id}`);
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error || "Error al cargar el perfil");
+        const [dogRes, measRes] = await Promise.all([
+          fetch(`/api/dogs/${id}`),
+          fetch(`/api/dogs/${id}/measurements`),
+        ]);
+
+        const dogData = await dogRes.json();
+        if (!dogRes.ok) {
+          setError(dogData.error || "Error al cargar el perfil");
           return;
         }
-        setDog(data.dog);
+        setDog(dogData.dog);
+
+        if (measRes.ok) {
+          const measData = await measRes.json();
+          setMeasurements(measData.measurements ?? []);
+        }
       } catch {
         setError("Error de conexión");
       } finally {
         setLoading(false);
       }
     }
-    fetchDog();
+    fetchData();
   }, [id]);
 
   async function handleDelete() {
@@ -172,6 +182,57 @@ export default function DogDetailPage({
             Contador manual con timer
           </span>
         </Link>
+
+        {/* Measurement history */}
+        {measurements.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Historial de mediciones</h2>
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+              {measurements.slice(0, 10).map((m) => {
+                const date = new Date(
+                  typeof m.createdAt === "number"
+                    ? m.createdAt * 1000
+                    : m.createdAt
+                );
+                const isElevated = m.breathsPerMinute > 30;
+                return (
+                  <div key={m.id} className="flex items-center justify-between px-4 py-3">
+                    <div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {date.toLocaleDateString("es-CL", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}{" "}
+                        {date.toLocaleTimeString("es-CL", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500">
+                        {m.breathCount} resp en {m.durationSeconds}s
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`text-lg font-bold tabular-nums ${
+                          isElevated
+                            ? "text-orange-600 dark:text-orange-400"
+                            : "text-green-600 dark:text-green-400"
+                        }`}
+                      >
+                        {m.breathsPerMinute}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                        rpm
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex gap-3">
