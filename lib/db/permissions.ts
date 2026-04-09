@@ -17,12 +17,17 @@ const ROLE_PERMISSIONS = {
     "measurement:read",
     "measurement:editNotes",
     "shares:manage",
+    "medication:manage",
+    "medication:read",
+    "medication:log",
   ],
   caretaker: [
     "dog:read",
     "measurement:create",
     "measurement:read",
     "measurement:editNotes",
+    "medication:read",
+    "medication:log",
   ],
 } as const;
 

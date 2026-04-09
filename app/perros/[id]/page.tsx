@@ -215,6 +215,20 @@ export default function DogDetailPage({
           </span>
         </Link>
 
+        {/* Medications link */}
+        <Link
+          href={`/perros/${dog.id}/medicamentos`}
+          className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50 transition-colors dark:border-gray-700 dark:hover:bg-gray-800"
+        >
+          <div>
+            <span className="text-sm font-semibold">💊 Medicamentos</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              Gestionar medicación y recordatorios
+            </span>
+          </div>
+          <span className="text-gray-400">&rarr;</span>
+        </Link>
+
         {/* Latest measurement alert */}
         {measurements.length > 0 && (
           <RpmAlert rpm={measurements[0].breathsPerMinute} threshold={dog.rpmThreshold ?? DEFAULT_RPM_THRESHOLD} />

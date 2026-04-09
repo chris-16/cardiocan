@@ -43,6 +43,13 @@
       "when": 1775764100000,
       "tag": "0005_add_dog_sharing",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1775766695098,
+      "tag": "0006_sweet_black_queen",
+      "breakpoints": true
     }
   ]
 }

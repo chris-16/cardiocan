@@ -96,6 +96,67 @@ export const shareInvitations = sqliteTable("share_invitations", {
     .$defaultFn(() => new Date()),
 });
 
+export const medications = sqliteTable("medications", {
+  id: text("id").primaryKey(), // UUID
+  dogId: text("dog_id")
+    .notNull()
+    .references(() => dogs.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // medication name
+  dose: text("dose").notNull(), // e.g. "5mg", "1 comprimido"
+  notes: text("notes"), // optional instructions
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const medicationSchedules = sqliteTable("medication_schedules", {
+  id: text("id").primaryKey(), // UUID
+  medicationId: text("medication_id")
+    .notNull()
+    .references(() => medications.id, { onDelete: "cascade" }),
+  time: text("time").notNull(), // HH:MM format (24h)
+  daysOfWeek: text("days_of_week").notNull().default("0,1,2,3,4,5,6"), // comma-separated: 0=Sun..6=Sat
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const medicationLogs = sqliteTable("medication_logs", {
+  id: text("id").primaryKey(), // UUID
+  medicationId: text("medication_id")
+    .notNull()
+    .references(() => medications.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  scheduledTime: text("scheduled_time").notNull(), // HH:MM that triggered it
+  administeredAt: integer("administered_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  status: text("status").notNull().default("administered"), // 'administered' | 'skipped'
+  notes: text("notes"),
+});
+
+export const pushSubscriptions = sqliteTable("push_subscriptions", {
+  id: text("id").primaryKey(), // UUID
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export type Dog = typeof dogs.$inferSelect;
 export type NewDog = typeof dogs.$inferInsert;
 export type RespiratoryMeasurement = typeof respiratoryMeasurements.$inferSelect;
@@ -104,3 +165,11 @@ export type DogShare = typeof dogShares.$inferSelect;
 export type NewDogShare = typeof dogShares.$inferInsert;
 export type ShareInvitation = typeof shareInvitations.$inferSelect;
 export type NewShareInvitation = typeof shareInvitations.$inferInsert;
+export type Medication = typeof medications.$inferSelect;
+export type NewMedication = typeof medications.$inferInsert;
+export type MedicationSchedule = typeof medicationSchedules.$inferSelect;
+export type NewMedicationSchedule = typeof medicationSchedules.$inferInsert;
+export type MedicationLog = typeof medicationLogs.$inferSelect;
+export type NewMedicationLog = typeof medicationLogs.$inferInsert;
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
