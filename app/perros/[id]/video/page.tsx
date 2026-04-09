@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, use } from "react";
+import { useState, useRef, useEffect, use } from "react";
 import Link from "next/link";
 import VideoRecorder from "@/app/perros/components/video-recorder";
 import AnalysisMethodSelector from "@/app/perros/components/analysis-method-selector";
@@ -9,6 +9,12 @@ import OnDeviceProgress from "@/app/perros/components/on-device-progress";
 import type { AnalysisMethod } from "@/app/perros/components/analysis-method-selector";
 import type { ValidationResult, ManualComparison } from "@/lib/analysis-validation";
 import type { ROI, AnalysisProgress, OnDeviceAnalysisResult } from "@/lib/on-device-analyzer";
+import {
+  saveMeasurementWithOfflineFallback,
+  flushOfflineQueue,
+  onOfflineQueueSynced,
+  getPendingMeasurementCount,
+} from "@/lib/offline-queue";
 
 type PageState =
   | "instructions"
@@ -49,8 +55,36 @@ export default function VideoPage({
   const [onDeviceProgress, setOnDeviceProgress] =
     useState<AnalysisProgress | null>(null);
   const [usedMethod, setUsedMethod] = useState<AnalysisMethod | null>(null);
+  const [savedOffline, setSavedOffline] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [offlineSyncedMsg, setOfflineSyncedMsg] = useState<string | null>(null);
 
   const videoBlobRef = useRef<Blob | null>(null);
+
+  // Listen for offline queue sync events and online/offline status
+  useEffect(() => {
+    const cleanup = onOfflineQueueSynced((count) => {
+      setOfflineSyncedMsg(
+        `Se ${count === 1 ? "sincronizó" : "sincronizaron"} ${count} ${count === 1 ? "medición pendiente" : "mediciones pendientes"}.`
+      );
+      setPendingCount(0);
+      setTimeout(() => setOfflineSyncedMsg(null), 5000);
+    });
+
+    const handleOnline = () => {
+      flushOfflineQueue();
+    };
+
+    window.addEventListener("online", handleOnline);
+
+    // Check pending count on mount
+    getPendingMeasurementCount().then(setPendingCount);
+
+    return () => {
+      cleanup();
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
 
   function handleVideoReady(blob: Blob) {
     videoBlobRef.current = blob;
@@ -111,6 +145,7 @@ export default function VideoPage({
     setPageState("on-device-analyzing");
     setAnalysisError(null);
     setUsedMethod("on-device");
+    setSavedOffline(false);
 
     try {
       // Dynamic import to keep the analyzer out of the main bundle
@@ -123,20 +158,35 @@ export default function VideoPage({
           setOnDeviceProgress(progress);
         });
 
-      // Save the result to the server
-      const res = await fetch(`/api/dogs/${dogId}/on-device-measurement`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(analysisResult),
-      });
+      // Save the result to the server (with offline fallback)
+      const saveUrl = `/api/dogs/${dogId}/on-device-measurement`;
+      const saveResult = await saveMeasurementWithOfflineFallback(
+        saveUrl,
+        analysisResult as unknown as Record<string, unknown>
+      );
 
-      const data = (await res.json()) as AnalysisResponse & { error?: string };
-
-      if (!res.ok) {
-        throw new Error(data.error || "Error al guardar la medición");
+      if (saveResult.online) {
+        const data = saveResult.data as unknown as AnalysisResponse & {
+          error?: string;
+        };
+        setResult(data);
+      } else {
+        // Measurement queued for offline sync — show result locally
+        setSavedOffline(true);
+        const pending = await getPendingMeasurementCount();
+        setPendingCount(pending);
+        setResult({
+          success: true,
+          analysis: {
+            breathCount: analysisResult.breathCount,
+            durationSeconds: analysisResult.durationSeconds,
+            breathsPerMinute: analysisResult.breathsPerMinute,
+            confidence: analysisResult.confidence,
+            notes: analysisResult.notes,
+          },
+        });
       }
 
-      setResult(data);
       setPageState("preview"); // Reset page state
     } catch (err) {
       const message =
@@ -366,8 +416,39 @@ export default function VideoPage({
                 </p>
               </div>
 
+              {/* Offline queue notice */}
+              {savedOffline && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-4">
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    <strong>Sin conexión:</strong> La medición se guardó
+                    localmente y se sincronizará automáticamente cuando
+                    recuperes la conexión a internet.
+                  </p>
+                  {pendingCount > 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                      {pendingCount}{" "}
+                      {pendingCount === 1
+                        ? "medición pendiente"
+                        : "mediciones pendientes"}{" "}
+                      de sincronización.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Offline sync success notification */}
+              {offlineSyncedMsg && (
+                <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20 p-4">
+                  <p className="text-sm text-green-700 dark:text-green-400">
+                    {offlineSyncedMsg}
+                  </p>
+                </div>
+              )}
+
               <p className="text-xs text-center text-gray-500 dark:text-gray-400">
-                La medición ha sido guardada automáticamente en el historial.
+                {savedOffline
+                  ? "La medición se sincronizará automáticamente al recuperar conexión."
+                  : "La medición ha sido guardada automáticamente en el historial."}
               </p>
             </>
           ) : (
@@ -425,6 +506,26 @@ export default function VideoPage({
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
+      {/* Offline sync notifications */}
+      {offlineSyncedMsg && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20 p-3">
+          <p className="text-sm text-green-700 dark:text-green-400">
+            {offlineSyncedMsg}
+          </p>
+        </div>
+      )}
+      {pendingCount > 0 && !savedOffline && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-3">
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            {pendingCount}{" "}
+            {pendingCount === 1
+              ? "medición pendiente"
+              : "mediciones pendientes"}{" "}
+            de sincronización.
+          </p>
+        </div>
+      )}
+
       <div className="mb-6">
         <Link
           href={`/perros/${dogId}`}
