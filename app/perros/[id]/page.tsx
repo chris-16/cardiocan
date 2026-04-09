@@ -215,6 +215,20 @@ export default function DogDetailPage({
           </span>
         </Link>
 
+        {/* Video recording CTA */}
+        <Link
+          href={`/perros/${dog.id}/video`}
+          className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50 transition-colors dark:border-gray-700 dark:hover:bg-gray-800"
+        >
+          <div>
+            <span className="text-sm font-semibold">📹 Análisis por video</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              Grabar video para medición automática
+            </span>
+          </div>
+          <span className="text-gray-400">&rarr;</span>
+        </Link>
+
         {/* Medications link */}
         <Link
           href={`/perros/${dog.id}/medicamentos`}
